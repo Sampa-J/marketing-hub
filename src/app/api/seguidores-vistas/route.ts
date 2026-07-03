@@ -31,14 +31,15 @@ async function fetchReportei(start: string, end: string) {
 export async function GET() {
   try {
     const hoje = new Date().toISOString().split('T')[0];
-    const ontem = new Date(Date.now() - 86400000).toISOString().split('T')[0];
     const inicioMes = hoje.slice(0, 7) + '-01';
 
-    // Total seguidores + ganho hoje
+    // Total seguidores + ganho hoje — janela de UM dia (start == end), igual ao backfill.
+    // Antes usava start=ontem, o que somava ontem+hoje e gravava esse valor de 2 dias
+    // como ganho_dia de um único dia, inflando a soma da série diária.
     const respHoje = await fetch(`${BASE}/metrics/get-data`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ start: ontem, end: hoje, integration_id: INTEGRATION_ID, metrics: [METRIC_TOTAL, METRIC_NEW] }),
+      body: JSON.stringify({ start: hoje, end: hoje, integration_id: INTEGRATION_ID, metrics: [METRIC_TOTAL, METRIC_NEW] }),
     });
     const dataHoje = await respHoje.json();
     if (dataHoje?.data?.exception || dataHoje?.code === 'integration_expired') {

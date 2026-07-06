@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useCallback } from "react"
 import { TeamLayout } from "@/components/team-layout"
 import { T } from "@/lib/constants"
 import { getSupabase } from "@/app/social-midia/calendario-seazone/_lib/supabase"
-import { Plus, Trash2, Copy, ChevronUp, ChevronDown, ArrowUpDown, ExternalLink, X } from "lucide-react"
+import { Plus, Trash2, Copy, ChevronUp, ChevronDown, ArrowUpDown, ExternalLink, X, Calendar, RefreshCw, AlertTriangle, Loader2, Pencil, Check } from "lucide-react"
 
 const NAVY = "#0f1d4e"
 const COR  = "#0f1d4e"
@@ -256,6 +256,7 @@ function GeralTab() {
 
   return (
     <div>
+      <InfluencersDashboard />
       <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 14, padding: "18px 22px", marginBottom: 16, boxShadow: T.elevSm }}>
         <p style={{ fontSize: 12, fontWeight: 700, color: T.mutedFg, margin: "0 0 12px", textTransform: "uppercase" as const, letterSpacing: ".05em" }}>Filtrar por período</p>
         <div style={{ display: "flex", gap: 14, alignItems: "flex-end", flexWrap: "wrap" as const }}>
@@ -807,6 +808,335 @@ function DataTab({ tableName, cols }: { tableName: string; cols: ColDef[] }) {
             </div>
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+/* ── Dashboard de Influencers (aba Geral) ──
+   Espelho invertido do dash do vistas-hospedes:
+   PRINCIPAL = reservas em todos os imóveis EXCETO VST · BLOCO de baixo = reservas nas cabanas VST. */
+function fmtBRL0(n: number) { return "R$ " + Math.round(n).toLocaleString("pt-BR") }
+
+type DashBucket = { conversoes: number; valor: number }
+type DashCupom = DashBucket & { porMes?: Record<string, DashBucket>; outros?: DashBucket; outrosPorMes?: Record<string, DashBucket> }
+
+function SocialAvatar({ url, perfil, size }: { url?: string; perfil: string; size: number }) {
+  const [err, setErr] = useState(false)
+  const clean = (perfil || "").replace(/^@/, "").trim()
+  const initials = (clean.slice(0, 2) || "?").toUpperCase()
+  const hue = [...clean].reduce((a, c) => a + c.charCodeAt(0), 0) % 360
+  if (url && !err) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={url} alt={perfil} onError={() => setErr(true)} style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", display: "block", border: `2px solid ${NAVY}30` }} />
+  }
+  return <div style={{ width: size, height: size, borderRadius: "50%", background: `hsl(${hue}, 45%, 46%)`, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: Math.round(size * 0.36), flexShrink: 0 }}>{initials}</div>
+}
+
+function InfluencersDashboard() {
+  const [rows, setRows] = useState<InfluRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [filterAno, setFilterAno] = useState("todos")
+  const [filterMes, setFilterMes] = useState("todos")
+  const [search, setSearch] = useState("")
+  const [filterStatus, setFilterStatus] = useState("Todos")
+  const [filterCategoria, setFilterCategoria] = useState("Todos")
+  const [sortBy, setSortBy] = useState<"conversoes" | "valor" | "perfil" | "visita">("conversoes")
+  const [soComConv, setSoComConv] = useState(false)
+  const [fotos, setFotos] = useState<Record<string, string>>({})
+  const [editFotoKey, setEditFotoKey] = useState<string | null>(null)
+  const [fotoInput, setFotoInput] = useState("")
+  const [conv, setConv] = useState<Record<string, DashCupom>>({})
+  const [convStatus, setConvStatus] = useState<"loading" | "ok" | "sem_chave" | "erro">("loading")
+  const [convMsg, setConvMsg] = useState("")
+
+  const syncMetabase = useCallback(async () => {
+    setConvStatus("loading"); setConvMsg("")
+    try {
+      const r = await fetch("/api/vistas-influenciadores-conversoes", { cache: "no-store" })
+      const d = await r.json()
+      if (d.error === "sem_chave") { setConvStatus("sem_chave"); setConvMsg(d.message || ""); return }
+      if (d.error) { setConvStatus("erro"); setConvMsg(d.message || "Erro ao consultar Metabase"); return }
+      setConv(d.cupons || {}); setConvStatus("ok")
+    } catch (e) { setConvStatus("erro"); setConvMsg(String(e)) }
+  }, [])
+
+  useEffect(() => {
+    (async () => {
+      const loaded: InfluRow[] = []
+      for (const t of DATA_TABS) {
+        const { data } = await getSupabase().from(t.table).select("*")
+        for (const r of (data ?? [])) {
+          const o: InfluRow = {}
+          Object.entries(r).forEach(([k, v]) => { o[k] = v === null || v === undefined ? "" : String(v) })
+          o._key = t.id + ":" + o.id
+          o._campanha = t.label
+          loaded.push(o)
+        }
+      }
+      setRows(loaded); setLoading(false)
+    })()
+    try { const s = localStorage.getItem("influencers-social-fotos"); if (s) setFotos(JSON.parse(s)) } catch {}
+    syncMetabase()
+  }, [syncMetabase])
+
+  function saveFoto(key: string, url: string) {
+    setFotos(prev => {
+      const next = { ...prev }
+      if (url.trim()) next[key] = url.trim(); else delete next[key]
+      try { localStorage.setItem("influencers-social-fotos", JSON.stringify(next)) } catch {}
+      return next
+    })
+    setEditFotoKey(null); setFotoInput("")
+  }
+
+  const mesNum = filterMes !== "todos" ? filterMes.slice(0, 2) : null
+  const periodoAtivo = filterAno !== "todos" || filterMes !== "todos"
+
+  const scoped = (bucket: DashBucket | undefined, porMes: Record<string, DashBucket> | undefined): DashBucket => {
+    if (!bucket) return { conversoes: 0, valor: 0 }
+    if (!periodoAtivo) return { conversoes: bucket.conversoes, valor: bucket.valor }
+    const pm = porMes || {}
+    let conversoes = 0, valor = 0
+    for (const ym in pm) {
+      if (filterAno !== "todos" && ym.slice(0, 4) !== filterAno) continue
+      if (mesNum && ym.slice(5, 7) !== mesNum) continue
+      conversoes += pm[ym].conversoes; valor += pm[ym].valor
+    }
+    return { conversoes, valor }
+  }
+  // PRINCIPAL = todos os imóveis EXCETO VST (no route isso é "outros")
+  const mainFor = (cupom: string): DashBucket => {
+    const e = conv[(cupom || "").trim().toLowerCase()]
+    return e ? scoped(e.outros, e.outrosPorMes) : { conversoes: 0, valor: 0 }
+  }
+  // SECUNDÁRIO = cabanas Vistas (VST)
+  const vstFor = (cupom: string): DashBucket => {
+    const e = conv[(cupom || "").trim().toLowerCase()]
+    return e ? scoped({ conversoes: e.conversoes, valor: e.valor }, e.porMes) : { conversoes: 0, valor: 0 }
+  }
+
+  const anos = ["todos", ...Array.from(new Set(rows.map(r => r.ano).filter(Boolean))).sort().reverse()]
+  const meses = ["todos", ...Array.from(new Set(rows.map(r => r.mes).filter(Boolean))).sort()]
+  const statusOpts = ["Todos", ...Array.from(new Set(rows.map(r => r.status_contrato).filter(Boolean)))]
+  const categoriaOpts = ["Todos", ...Array.from(new Set(rows.map(r => r.categoria).filter(Boolean)))]
+
+  // dedupe por cupom (mantém 1 por cupom; sem cupom fica individual)
+  const rowsUnicos = (() => {
+    const score = (x: InfluRow) => (String(x.status_contrato).toLowerCase() === "contratado" ? 2 : 0) + (x.data_visita_hospedagem ? 1 : 0)
+    const idxByCupom = new Map<string, number>()
+    const out: InfluRow[] = []
+    for (const r of rows) {
+      const k = (r.cupom || "").trim().toLowerCase()
+      if (!k) { out.push(r); continue }
+      const idx = idxByCupom.get(k)
+      if (idx === undefined) { idxByCupom.set(k, out.length); out.push(r) }
+      else if (score(r) > score(out[idx])) { out[idx] = r }
+    }
+    return out
+  })()
+
+  const filtrados = rowsUnicos.filter(r => {
+    if (periodoAtivo) {
+      const matchesReg = (filterAno === "todos" || r.ano === filterAno) && (filterMes === "todos" || r.mes === filterMes)
+      if (!matchesReg && !mainFor(r.cupom).conversoes) return false
+    }
+    if (filterStatus !== "Todos" && r.status_contrato !== filterStatus) return false
+    if (filterCategoria !== "Todos" && r.categoria !== filterCategoria) return false
+    if (soComConv && !mainFor(r.cupom).conversoes) return false
+    if (search) {
+      const q = search.toLowerCase()
+      if (!((r.perfil || "").toLowerCase().includes(q) || (r.cupom || "").toLowerCase().includes(q))) return false
+    }
+    return true
+  })
+
+  const ordenados = [...filtrados].sort((a, b) => {
+    if (sortBy === "perfil") return (a.perfil || "").localeCompare(b.perfil || "", "pt-BR")
+    if (sortBy === "visita") return (b.data_visita_hospedagem || "").localeCompare(a.data_visita_hospedagem || "", "pt-BR", { numeric: true })
+    if (sortBy === "valor") return mainFor(b.cupom).valor - mainFor(a.cupom).valor
+    return mainFor(b.cupom).conversoes - mainFor(a.cupom).conversoes
+  })
+
+  const totalConv = filtrados.reduce((s, r) => s + mainFor(r.cupom).conversoes, 0)
+  const totalValor = filtrados.reduce((s, r) => s + mainFor(r.cupom).valor, 0)
+  const totalVst = filtrados.reduce((s, r) => s + vstFor(r.cupom).conversoes, 0)
+  const totalVstValor = filtrados.reduce((s, r) => s + vstFor(r.cupom).valor, 0)
+  const ranked = [...filtrados].map(r => ({ r, c: mainFor(r.cupom) })).sort((a, b) => b.c.conversoes - a.c.conversoes)
+  const maxConv = Math.max(1, ...ranked.map(x => x.c.conversoes))
+  const activeExtra = (search ? 1 : 0) + (filterStatus !== "Todos" ? 1 : 0) + (filterCategoria !== "Todos" ? 1 : 0) + (soComConv ? 1 : 0)
+  const periodoLabel = !periodoAtivo ? "todo o período" : `${filterMes !== "todos" ? filterMes.replace(/^\d+\.\s*/, "") : "todos os meses"}${filterAno !== "todos" ? ` / ${filterAno}` : ""}`
+
+  const GS = { text: "#1a1d23", textMuted: "#6b7280", cardBorder: "#edf0f3" }
+  const selectStyle: React.CSSProperties = { padding: "4px 8px", fontSize: 12, border: `1px solid ${T.border}`, borderRadius: 4, outline: "none", background: "#fff", color: GS.text }
+
+  if (loading) return <div style={{ display: "flex", alignItems: "center", gap: 8, color: T.mutedFg, fontSize: 13, padding: "16px 0" }}><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Carregando dashboard...</div>
+
+  return (
+    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 14, padding: "18px 22px", marginBottom: 16, boxShadow: T.elevSm }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      <p style={{ fontSize: 15, fontWeight: 700, color: T.cardFg, margin: "0 0 4px" }}>Dashboard de Influencers</p>
+      <p style={{ fontSize: 12, color: T.mutedFg, margin: "0 0 14px" }}>Reservas em todos os imóveis <b>exceto</b> as cabanas do Vistas (VST) — essas ficam no bloco de cada card.</p>
+
+      {/* Filtros */}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={{ fontSize: 10, color: T.mutedFg, fontWeight: 600 }}>Ano</span>
+          <select value={filterAno} onChange={e => setFilterAno(e.target.value)} style={{ ...selectStyle, minWidth: 80 }}>{anos.map(a => <option key={a} value={a}>{a === "todos" ? "Todos" : a}</option>)}</select>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={{ fontSize: 10, color: T.mutedFg, fontWeight: 600 }}>Mês</span>
+          <select value={filterMes} onChange={e => setFilterMes(e.target.value)} style={{ ...selectStyle, minWidth: 130 }}>{meses.map(m => <option key={m} value={m}>{m === "todos" ? "Todos" : m}</option>)}</select>
+        </div>
+        <button onClick={() => { setFilterAno("todos"); setFilterMes("todos") }} style={{ marginTop: 14, padding: "4px 10px", background: "transparent", border: `1px solid ${T.border}`, borderRadius: 4, fontSize: 11, cursor: "pointer", color: T.mutedFg }}>Todos</button>
+        <button onClick={syncMetabase} disabled={convStatus === "loading"} style={{ marginLeft: "auto", marginTop: 14, display: "flex", alignItems: "center", gap: 5, background: NAVY, color: "#fff", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: convStatus === "loading" ? 0.7 : 1 }}>
+          <RefreshCw size={12} style={convStatus === "loading" ? { animation: "spin 1s linear infinite" } : {}} /> Sincronizar Metabase
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 14, padding: "10px 12px", background: `${NAVY}06`, border: `1px solid ${NAVY}20`, borderRadius: 8 }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Buscar perfil ou cupom..." style={{ padding: "6px 10px", fontSize: 12, border: `1px solid ${T.border}`, borderRadius: 6, outline: "none", background: "#fff", color: GS.text, width: 200 }} />
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={selectStyle}>{statusOpts.map(s => <option key={s} value={s}>{s === "Todos" ? "Status: todos" : s}</option>)}</select>
+        <select value={filterCategoria} onChange={e => setFilterCategoria(e.target.value)} style={selectStyle}>{categoriaOpts.map(c => <option key={c} value={c}>{c === "Todos" ? "Categoria: todas" : c}</option>)}</select>
+        <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)} style={selectStyle}>
+          <option value="conversoes">Ordenar: conversões</option>
+          <option value="valor">Ordenar: R$ reservas</option>
+          <option value="visita">Ordenar: visita recente</option>
+          <option value="perfil">Ordenar: nome (A-Z)</option>
+        </select>
+        <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: GS.text, cursor: "pointer", userSelect: "none" }}>
+          <input type="checkbox" checked={soComConv} onChange={e => setSoComConv(e.target.checked)} style={{ accentColor: NAVY, cursor: "pointer" }} /> Só com conversão
+        </label>
+        {activeExtra > 0 && (
+          <button onClick={() => { setSearch(""); setFilterStatus("Todos"); setFilterCategoria("Todos"); setSoComConv(false) }} style={{ padding: "5px 10px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 6, fontSize: 12, cursor: "pointer", color: "#92400e" }}>Limpar filtros ✕</button>
+        )}
+        <span style={{ fontSize: 11, color: T.mutedFg }}>{filtrados.length} de {rowsUnicos.length}</span>
+      </div>
+
+      {convStatus === "sem_chave" && (
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 14px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, marginBottom: 14, fontSize: 12, color: "#92400e" }}>
+          <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>Conversões indisponíveis no ambiente local — <b>{convMsg}</b> Aparecem assim que a chave estiver configurada (em produção já funciona).</span>
+        </div>
+      )}
+      {convStatus === "erro" && (
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 14px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, marginBottom: 14, fontSize: 12, color: "#991b1b" }}>
+          <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} /> <span>Erro ao consultar Metabase: {convMsg}</span>
+        </div>
+      )}
+
+      {/* KPIs */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10, marginBottom: 12 }}>
+        {[
+          { label: "Influencers", value: String(filtrados.length), color: NAVY },
+          { label: "Conversões (fora VST)", value: convStatus === "ok" ? totalConv.toLocaleString("pt-BR") : "—", color: "#10b981" },
+          { label: "R$ em reservas", value: convStatus === "ok" ? fmtBRL0(totalValor) : "—", color: "#b45309" },
+          { label: "Contratados", value: String(filtrados.filter(r => String(r.status_contrato).toLowerCase() === "contratado").length), color: "#065f46" },
+        ].map(kpi => (
+          <div key={kpi.label} style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: "12px 16px" }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: T.mutedFg, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.04em" }}>{kpi.label}</p>
+            <p style={{ fontSize: 18, fontWeight: 800, color: kpi.color, margin: 0 }}>{kpi.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {convStatus === "ok" && (
+        <p style={{ fontSize: 11, color: T.mutedFg, margin: "0 0 12px" }}>
+          <Calendar size={11} style={{ display: "inline", verticalAlign: -1, marginRight: 4 }} />
+          Conversões e R$ em reservas (todos os imóveis, <b>exceto</b> cabanas VST) referentes a: <b style={{ color: NAVY }}>{periodoLabel}</b> (pela data da reserva)
+        </p>
+      )}
+
+      {filtrados.length === 0 ? (
+        <p style={{ fontSize: 13, color: T.mutedFg, fontStyle: "italic", textAlign: "center", padding: "24px 0" }}>Nenhum influencer com os filtros aplicados.</p>
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12, marginBottom: 20, maxHeight: 540, overflowY: "auto", paddingRight: 6 }}>
+            {ordenados.map(r => {
+              const c = mainFor(r.cupom)
+              const v = vstFor(r.cupom)
+              const editando = editFotoKey === r._key
+              return (
+                <div key={r._key} style={{ background: "#fff", border: `1px solid ${GS.cardBorder}`, borderRadius: 12, padding: "16px 14px", boxShadow: "0 1px 3px rgba(0,0,0,0.06)", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", position: "relative" }}>
+                  <div style={{ position: "relative", marginBottom: 8 }}>
+                    <SocialAvatar url={r.foto || fotos[r._key]} perfil={r.perfil} size={68} />
+                    <button title="Trocar foto" onClick={() => { setEditFotoKey(editando ? null : r._key); setFotoInput(r.foto || fotos[r._key] || "") }}
+                      style={{ position: "absolute", bottom: -2, right: -2, width: 24, height: 24, borderRadius: "50%", background: NAVY, border: "2px solid #fff", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+                      <Pencil size={11} />
+                    </button>
+                  </div>
+                  {editando && (
+                    <div style={{ display: "flex", gap: 4, marginBottom: 8, width: "100%" }}>
+                      <input autoFocus value={fotoInput} onChange={e => setFotoInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") saveFoto(r._key, fotoInput); if (e.key === "Escape") { setEditFotoKey(null); setFotoInput("") } }}
+                        placeholder="Colar URL da foto" style={{ flex: 1, minWidth: 0, padding: "4px 8px", fontSize: 11, border: `1px solid ${NAVY}`, borderRadius: 6, outline: "none" }} />
+                      <button onClick={() => saveFoto(r._key, fotoInput)} style={{ padding: "0 8px", background: NAVY, color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}><Check size={13} /></button>
+                    </div>
+                  )}
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 2 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: GS.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 130 }}>{r.perfil || "—"}</span>
+                    {(r.link_perfil || "").startsWith("http") && <a href={r.link_perfil.split("\n")[0]} target="_blank" rel="noopener noreferrer" style={{ color: NAVY, display: "flex" }}><ExternalLink size={11} /></a>}
+                  </div>
+                  {r.seguidores && <span style={{ fontSize: 11, color: GS.textMuted, marginBottom: 6 }}>{r.seguidores} seguidores</span>}
+                  {r.status_contrato && <span style={{ ...statusStyle(r.status_contrato), fontSize: 10, fontWeight: 600, borderRadius: 20, padding: "2px 10px", marginBottom: 10 }}>{r.status_contrato}</span>}
+                  <div style={{ width: "100%", borderTop: `1px solid ${GS.cardBorder}`, paddingTop: 10, display: "flex", flexDirection: "column", gap: 5 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, fontSize: 11, color: GS.textMuted }}>
+                      <Calendar size={11} /> {r.data_visita_hospedagem ? `Visita ${r.data_visita_hospedagem}` : "Sem data de visita"}
+                    </div>
+                    {r.cupom && <div style={{ fontSize: 11, color: GS.textMuted }}>Cupom <span style={{ fontWeight: 700, color: NAVY }}>{r.cupom}</span></div>}
+                    <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                      <div style={{ flex: 1, background: "#ecfdf5", borderRadius: 8, padding: "6px 4px" }}>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: "#059669", lineHeight: 1 }}>{convStatus === "ok" ? c.conversoes : "—"}</div>
+                        <div style={{ fontSize: 9, color: "#059669", fontWeight: 600, textTransform: "uppercase", marginTop: 2 }}>conversões</div>
+                      </div>
+                      <div style={{ flex: 1.3, background: "#fffbeb", borderRadius: 8, padding: "6px 4px" }}>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: "#b45309", lineHeight: 1 }}>{convStatus === "ok" ? fmtBRL0(c.valor) : "—"}</div>
+                        <div style={{ fontSize: 9, color: "#b45309", fontWeight: 600, textTransform: "uppercase", marginTop: 2 }}>em reservas</div>
+                      </div>
+                    </div>
+                    {convStatus === "ok" && v.conversoes > 0 && (
+                      <div style={{ marginTop: 6, padding: "5px 8px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, fontSize: 10, color: "#1d4ed8", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#2563eb", flexShrink: 0 }} />
+                        <span>Cabanas Vistas (VST): <b>{v.conversoes}</b> · <b>{fmtBRL0(v.valor)}</b></span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Ranking */}
+          <div style={{ background: "#fff", border: `1px solid ${GS.cardBorder}`, borderRadius: 12, padding: "16px 20px", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
+            <p style={{ fontSize: 12, fontWeight: 700, color: GS.text, margin: "0 0 14px", textTransform: "uppercase", letterSpacing: "0.04em" }}>Ranking por conversão (fora VST)</p>
+            {convStatus !== "ok" ? (
+              <p style={{ fontSize: 12, color: GS.textMuted, fontStyle: "italic", margin: 0 }}>O ranking aparece quando as conversões do Metabase estiverem disponíveis.</p>
+            ) : ranked.every(x => !x.c.conversoes) ? (
+              <p style={{ fontSize: 12, color: GS.textMuted, fontStyle: "italic", margin: 0 }}>Nenhuma conversão (fora VST) registrada para os cupons deste período.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 168, overflowY: "auto", paddingRight: 6 }}>
+                {ranked.map(({ r, c }, i) => (
+                  <div key={r._key} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: GS.textMuted, width: 18, textAlign: "right", flexShrink: 0 }}>{i + 1}</span>
+                    <SocialAvatar url={r.foto || fotos[r._key]} perfil={r.perfil} size={28} />
+                    <span style={{ fontSize: 12, fontWeight: 600, color: GS.text, width: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 0 }}>{r.perfil || "—"}</span>
+                    <div style={{ flex: 1, background: "#f3f4f6", borderRadius: 99, height: 16, overflow: "hidden", minWidth: 40 }}>
+                      <div style={{ height: "100%", borderRadius: 99, width: `${(c.conversoes / maxConv) * 100}%`, background: NAVY, minWidth: c.conversoes > 0 ? 4 : 0, transition: "width 0.4s" }} />
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#059669", width: 56, textAlign: "right", flexShrink: 0 }}>{c.conversoes} conv.</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#b45309", width: 80, textAlign: "right", flexShrink: 0 }}>{fmtBRL0(c.valor)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          {convStatus === "ok" && totalVst > 0 && (
+            <div style={{ marginTop: 12, padding: "9px 13px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, fontSize: 12, color: "#1d4ed8", display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#2563eb", flexShrink: 0 }} />
+              <span>Somando os influencers exibidos: <b>{totalVst}</b> reserva{totalVst > 1 ? "s" : ""} desses cupons {totalVst > 1 ? "foram" : "foi"} nas cabanas do Vistas (VST) <b>({fmtBRL0(totalVstValor)})</b> — não contabilizada{totalVst > 1 ? "s" : ""} nos números acima. Veja o detalhe por influencer em cada card.</span>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

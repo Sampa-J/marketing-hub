@@ -389,12 +389,12 @@ function CriativosSection() {
       {loading ? (
         <div style={{ display: "flex", alignItems: "center", gap: 8, color: T.mutedFg, fontSize: 13, padding: "16px 0" }}><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Buscando criativos na Nekt...</div>
       ) : rows.length > 0 && (
-        <div style={{ overflowX: "auto" }}>
+        <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: 420 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-            <thead>
+            <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
               <tr style={{ background: T.muted }}>
                 {["Anúncio", "Ad ID", "Campanha", "Investimento", "Impressões", "Variação D-1", "Leads", "WON"].map(col =>
-                  <th key={col} style={{ padding: "7px 10px", textAlign: "left", fontWeight: 600, color: T.mutedFg, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{col}</th>
+                  <th key={col} style={{ padding: "7px 10px", textAlign: "left", fontWeight: 600, color: T.mutedFg, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", background: T.muted }}>{col}</th>
                 )}
               </tr>
             </thead>
@@ -443,6 +443,7 @@ interface InfluRow {
   data_contratacao: string; data_pagamento: string; cupom: string
   validade_cupom: string; data_post: string; link_post: string
   conversoes: string; valor_reservas: string; conteudo_orcado: string; observacoes: string
+  foto?: string
 }
 
 const INFLU_COLS: { key: keyof InfluRow; label: string; width: number; type?: string }[] = [
@@ -463,8 +464,6 @@ const INFLU_COLS: { key: keyof InfluRow; label: string; width: number; type?: st
   { key: 'data_pagamento', label: 'Dt Pgto', width: 90 },
   { key: 'data_post', label: 'Data Post', width: 100 },
   { key: 'link_post', label: 'Link Post', width: 75, type: 'link' },
-  { key: 'conversoes', label: 'Conversões', width: 85 },
-  { key: 'valor_reservas', label: 'Vlr Reservas', width: 100 },
   { key: 'conteudo_orcado', label: 'Conteúdo Orçado', width: 180 },
   { key: 'observacoes', label: 'Observações', width: 180 },
 ]
@@ -936,21 +935,27 @@ function InfluenciadoresSection() {
                           style={{ width: '100%', padding: '4px 10px', fontSize: 12, fontWeight: 600, borderRadius: 20, cursor: 'pointer', outline: 'none', height: 28, background: `${COR}12`, color: COR, border: `1px solid ${COR}40` }}>
                           <option value="">—</option>
                           <option value="Influ">Influ</option>
-                          <option value="Perfil">Perfil</option>
                           <option value="Página">Página</option>
                         </select>
                       </td>
                     )
 
-                    if (col.type === 'link' && val?.startsWith('http')) return (
-                      <td key={col.key} style={{ ...cellBase, background: bg, textAlign: 'center', whiteSpace: 'nowrap' }}
-                        onDoubleClick={e => { e.stopPropagation(); setEditCell({ id: row.id, key: col.key }); setEditVal(val) }}>
-                        <a href={val.split('\n')[0]} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
-                          style={{ color: COR, fontSize: 12, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 8px', background: `${COR}10`, borderRadius: 6, border: `1px solid ${COR}30`, fontWeight: 500 }}>
-                          <ExternalLink size={11} /> ver
-                        </a>
-                      </td>
-                    )
+                    if (col.type === 'link') {
+                      const links = (val || '').split(/[\s,]+/).map(s => s.trim()).filter(u => /^https?:\/\//.test(u))
+                      if (links.length > 0) return (
+                        <td key={col.key} style={{ ...cellBase, background: bg, textAlign: 'center' }}
+                          onDoubleClick={e => { e.stopPropagation(); setEditCell({ id: row.id, key: col.key }); setEditVal(val) }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
+                            {links.map((u, li) => (
+                              <a key={li} href={u} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} title={u}
+                                style={{ color: COR, fontSize: 11, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 8px', background: `${COR}10`, borderRadius: 6, border: `1px solid ${COR}30`, fontWeight: 500 }}>
+                                <ExternalLink size={11} /> {links.length > 1 ? `Ver ${li + 1}` : 'ver'}
+                              </a>
+                            ))}
+                          </div>
+                        </td>
+                      )
+                    }
 
                     if (isLongText) return (
                       <td key={col.key}
@@ -1070,6 +1075,372 @@ function InfluenciadoresSection() {
             </div>
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+/* ── Dashboard de Influenciadores (abaixo da planilha) ── */
+interface Bucket { conversoes: number; valor: number }
+interface CupomConv extends Bucket { porMes?: Record<string, Bucket>; outros?: Bucket; outrosPorMes?: Record<string, Bucket> }
+
+function InfluAvatar({ url, perfil, size }: { url?: string; perfil: string; size: number }) {
+  const [err, setErr] = useState(false)
+  const clean = (perfil || '').replace(/^@/, '').trim()
+  const initials = (clean.slice(0, 2) || '?').toUpperCase()
+  const hue = [...clean].reduce((a, c) => a + c.charCodeAt(0), 0) % 360
+  if (url && !err) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={url} alt={perfil} onError={() => setErr(true)}
+      style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', display: 'block', border: `2px solid ${COR}30` }} />
+  }
+  return (
+    <div style={{ width: size, height: size, borderRadius: '50%', background: `hsl(${hue}, 52%, 55%)`, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: Math.round(size * 0.36), flexShrink: 0 }}>
+      {initials}
+    </div>
+  )
+}
+
+function InfluenciadoresDashboard() {
+  const [rows, setRows] = useState<InfluRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [filterAno, setFilterAno] = useState('Todos')
+  const [filterMes, setFilterMes] = useState('Todos')
+  const [fotos, setFotos] = useState<Record<string, string>>({})
+  const [editFotoId, setEditFotoId] = useState<string | null>(null)
+  const [fotoInput, setFotoInput] = useState('')
+  const [conv, setConv] = useState<Record<string, CupomConv>>({})
+  const [convStatus, setConvStatus] = useState<'loading' | 'ok' | 'sem_chave' | 'erro'>('loading')
+  const [convMsg, setConvMsg] = useState('')
+  const [search, setSearch] = useState('')
+  const [filterStatus, setFilterStatus] = useState('Todos')
+  const [filterCategoria, setFilterCategoria] = useState('Todos')
+  const [sortBy, setSortBy] = useState<'conversoes' | 'valor' | 'perfil' | 'visita'>('conversoes')
+  const [soComConv, setSoComConv] = useState(false)
+
+  const syncMetabase = useCallback(async () => {
+    setConvStatus('loading'); setConvMsg('')
+    try {
+      const r = await fetch('/api/vistas-influenciadores-conversoes', { cache: 'no-store' })
+      const d = await r.json()
+      if (d.error === 'sem_chave') { setConvStatus('sem_chave'); setConvMsg(d.message || ''); return }
+      if (d.error) { setConvStatus('erro'); setConvMsg(d.message || 'Erro ao consultar Metabase'); return }
+      setConv(d.cupons || {}); setConvStatus('ok')
+    } catch (e) { setConvStatus('erro'); setConvMsg(String(e)) }
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/vistas-influenciadores').then(r => r.json()).then(d => { setRows(Array.isArray(d) ? d : []); setLoading(false) }).catch(() => setLoading(false))
+    try { const s = localStorage.getItem('vistas-influ-fotos'); if (s) setFotos(JSON.parse(s)) } catch {}
+    const now = new Date()
+    setFilterAno(String(now.getFullYear()))
+    setFilterMes(MES_NOMES[now.getMonth() + 1] || 'Todos')
+    syncMetabase()
+  }, [syncMetabase])
+
+  async function saveFoto(id: string, url: string) {
+    const v = url.trim()
+    setRows(prev => prev.map(r => r.id === id ? { ...r, foto: v } : r)) // atualiza a tela na hora
+    setEditFotoId(null); setFotoInput('')
+    try {
+      const res = await fetch('/api/vistas-influenciadores', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, foto: v }) })
+      if (!res.ok) throw new Error(await res.text())
+    } catch (e) {
+      alert('Não consegui salvar a foto no banco. Confira se a coluna "foto" já foi criada no Supabase.\n\nDetalhe: ' + String(e))
+    }
+  }
+
+  // Número do mês selecionado ("03. Março" -> "03"); null quando "Todos"
+  const mesNum = filterMes !== 'Todos' ? filterMes.slice(0, 2) : null
+  const periodoAtivo = filterAno !== 'Todos' || filterMes !== 'Todos'
+
+  // Conversões/R$ do cupom, respeitando o período selecionado (por data da reserva).
+  // Sem período => total geral do cupom.
+  const convFor = (cupom: string): Bucket | null => {
+    const k = (cupom || '').trim().toLowerCase()
+    const entry = k ? conv[k] : null
+    if (!entry) return null
+    if (!periodoAtivo) return { conversoes: entry.conversoes, valor: entry.valor }
+    const pm = entry.porMes || {}
+    let conversoes = 0, valor = 0
+    for (const ym in pm) {
+      if (filterAno !== 'Todos' && ym.slice(0, 4) !== filterAno) continue
+      if (mesNum && ym.slice(5, 7) !== mesNum) continue
+      conversoes += pm[ym].conversoes; valor += pm[ym].valor
+    }
+    return { conversoes, valor }
+  }
+
+  // Reservas do mesmo cupom em OUTROS imóveis (não-VST), respeitando o período.
+  const outrosFor = (cupom: string): Bucket => {
+    const k = (cupom || '').trim().toLowerCase()
+    const entry = k ? conv[k] : null
+    if (!entry || !entry.outros) return { conversoes: 0, valor: 0 }
+    if (!periodoAtivo) return { conversoes: entry.outros.conversoes, valor: entry.outros.valor }
+    const pm = entry.outrosPorMes || {}
+    let conversoes = 0, valor = 0
+    for (const ym in pm) {
+      if (filterAno !== 'Todos' && ym.slice(0, 4) !== filterAno) continue
+      if (mesNum && ym.slice(5, 7) !== mesNum) continue
+      conversoes += pm[ym].conversoes; valor += pm[ym].valor
+    }
+    return { conversoes, valor }
+  }
+
+  // Deduplica por cupom (case-insensitive) — mantém 1 linha por cupom, preferindo
+  // a mais completa (contratado > com data de visita). Linhas sem cupom ficam individuais.
+  const rowsUnicos = (() => {
+    const score = (x: InfluRow) => (x.status?.toLowerCase() === 'contratado' ? 2 : 0) + (x.data_visita ? 1 : 0)
+    const idxByCupom = new Map<string, number>()
+    const out: InfluRow[] = []
+    for (const r of rows) {
+      const k = (r.cupom || '').trim().toLowerCase()
+      if (!k) { out.push(r); continue }
+      const idx = idxByCupom.get(k)
+      if (idx === undefined) { idxByCupom.set(k, out.length); out.push(r) }
+      else if (score(r) > score(out[idx])) { out[idx] = r }
+    }
+    return out
+  })()
+  const duplicatasRemovidas = rows.length - rowsUnicos.length
+
+  const anos = ['Todos', ...Array.from(new Set(rows.map(r => r.ano).filter(Boolean))).sort()]
+  const meses = ['Todos', ...Array.from(new Set(rows.map(r => r.mes).filter(Boolean))).sort()]
+  const statusOpts = ['Todos', ...Array.from(new Set(rows.map(r => r.status).filter(Boolean)))]
+  const categoriaOpts = ['Todos', ...Array.from(new Set(rows.map(r => r.categoria).filter(Boolean))).filter(c => c !== 'Perfil')]
+
+  const filtrados = rowsUnicos.filter(r => {
+    // Período: aparece se foi registrado no mês OU se o cupom teve reserva no período
+    if (periodoAtivo) {
+      const matchesReg = (filterAno === 'Todos' || r.ano === filterAno) && (filterMes === 'Todos' || r.mes === filterMes)
+      if (!matchesReg && !(convFor(r.cupom)?.conversoes)) return false
+    }
+    if (filterStatus !== 'Todos' && r.status !== filterStatus) return false
+    if (filterCategoria !== 'Todos' && r.categoria !== filterCategoria) return false
+    if (soComConv && !(convFor(r.cupom)?.conversoes)) return false
+    if (search) {
+      const q = search.toLowerCase()
+      if (!(r.perfil?.toLowerCase().includes(q) || r.cupom?.toLowerCase().includes(q))) return false
+    }
+    return true
+  })
+
+  const ordenados = [...filtrados].sort((a, b) => {
+    if (sortBy === 'perfil') return (a.perfil || '').localeCompare(b.perfil || '', 'pt-BR')
+    if (sortBy === 'visita') return (b.data_visita || '').localeCompare(a.data_visita || '', 'pt-BR', { numeric: true })
+    if (sortBy === 'valor') return (convFor(b.cupom)?.valor || 0) - (convFor(a.cupom)?.valor || 0)
+    return (convFor(b.cupom)?.conversoes || 0) - (convFor(a.cupom)?.conversoes || 0)
+  })
+
+  const totalConv = filtrados.reduce((s, r) => s + (convFor(r.cupom)?.conversoes || 0), 0)
+  const totalValor = filtrados.reduce((s, r) => s + (convFor(r.cupom)?.valor || 0), 0)
+  const totalOutros = filtrados.reduce((s, r) => s + outrosFor(r.cupom).conversoes, 0)
+  const totalOutrosValor = filtrados.reduce((s, r) => s + outrosFor(r.cupom).valor, 0)
+  const ranked = [...filtrados]
+    .map(r => ({ r, c: convFor(r.cupom) }))
+    .sort((a, b) => (b.c?.conversoes || 0) - (a.c?.conversoes || 0))
+  const maxConv = Math.max(1, ...ranked.map(x => x.c?.conversoes || 0))
+  const activeExtra = (search ? 1 : 0) + (filterStatus !== 'Todos' ? 1 : 0) + (filterCategoria !== 'Todos' ? 1 : 0) + (soComConv ? 1 : 0)
+  const periodoLabel = !periodoAtivo
+    ? 'todo o período'
+    : `${filterMes !== 'Todos' ? filterMes.replace(/^\d+\.\s*/, '') : 'todos os meses'}${filterAno !== 'Todos' ? ` / ${filterAno}` : ''}`
+
+  const fmtBRL0 = (n: number) => 'R$ ' + Math.round(n).toLocaleString('pt-BR')
+  const GS = { text: '#1a1d23', textMuted: '#6b7280', border: '#e2e5e9', cardBorder: '#edf0f3' }
+
+  const selectStyle: React.CSSProperties = { padding: '4px 8px', fontSize: 12, border: `1px solid ${T.border}`, borderRadius: 4, outline: 'none', background: '#fff', color: GS.text }
+
+  if (loading) return <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: T.mutedFg, fontSize: 13, padding: '16px 0' }}><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Carregando dashboard...</div>
+
+  return (
+    <div>
+      {/* Filtro por período + status do Metabase */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span style={{ fontSize: 10, color: T.mutedFg, fontWeight: 600 }}>Ano</span>
+          <select value={filterAno} onChange={e => setFilterAno(e.target.value)} style={{ ...selectStyle, minWidth: 80 }}>{anos.map(a => <option key={a}>{a}</option>)}</select>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span style={{ fontSize: 10, color: T.mutedFg, fontWeight: 600 }}>Mês</span>
+          <select value={filterMes} onChange={e => setFilterMes(e.target.value)} style={{ ...selectStyle, minWidth: 130 }}>{meses.map(m => <option key={m}>{m}</option>)}</select>
+        </div>
+        <button onClick={() => { setFilterAno('Todos'); setFilterMes('Todos') }} style={{ marginTop: 14, padding: '4px 10px', background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 4, fontSize: 11, cursor: 'pointer', color: T.mutedFg }}>Todos</button>
+        <span style={{ marginTop: 14, fontSize: 11, color: T.mutedFg }}>
+          {filtrados.length} de {rowsUnicos.length} influenciadores
+          {duplicatasRemovidas > 0 && <span style={{ color: '#92400e' }}> · {duplicatasRemovidas} duplicata{duplicatasRemovidas > 1 ? 's' : ''} de cupom oculta{duplicatasRemovidas > 1 ? 's' : ''}</span>}
+        </span>
+        <button onClick={syncMetabase} disabled={convStatus === 'loading'} style={{ marginLeft: 'auto', marginTop: 14, display: 'flex', alignItems: 'center', gap: 5, background: T.primary, color: '#fff', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: convStatus === 'loading' ? 0.7 : 1 }}>
+          <RefreshCw size={12} style={convStatus === 'loading' ? { animation: 'spin 1s linear infinite' } : {}} /> Sincronizar Metabase
+        </button>
+      </div>
+
+      {/* Barra de filtros */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14, padding: '10px 12px', background: `${COR}06`, border: `1px solid ${COR}20`, borderRadius: 8 }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Buscar perfil ou cupom..."
+          style={{ padding: '6px 10px', fontSize: 12, border: `1px solid ${T.border}`, borderRadius: 6, outline: 'none', background: '#fff', color: GS.text, width: 200 }} />
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={selectStyle} title="Status">
+          {statusOpts.map(s => <option key={s} value={s}>{s === 'Todos' ? 'Status: todos' : s}</option>)}
+        </select>
+        <select value={filterCategoria} onChange={e => setFilterCategoria(e.target.value)} style={selectStyle} title="Categoria">
+          {categoriaOpts.map(c => <option key={c} value={c}>{c === 'Todos' ? 'Categoria: todas' : c}</option>)}
+        </select>
+        <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)} style={selectStyle} title="Ordenar por">
+          <option value="conversoes">Ordenar: conversões</option>
+          <option value="valor">Ordenar: R$ reservas</option>
+          <option value="visita">Ordenar: visita recente</option>
+          <option value="perfil">Ordenar: nome (A-Z)</option>
+        </select>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: GS.text, cursor: 'pointer', userSelect: 'none' }}>
+          <input type="checkbox" checked={soComConv} onChange={e => setSoComConv(e.target.checked)} style={{ accentColor: COR, cursor: 'pointer' }} />
+          Só com conversão
+        </label>
+        {activeExtra > 0 && (
+          <button onClick={() => { setSearch(''); setFilterStatus('Todos'); setFilterCategoria('Todos'); setSoComConv(false) }}
+            style={{ padding: '5px 10px', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, fontSize: 12, cursor: 'pointer', color: '#92400e', display: 'flex', alignItems: 'center', gap: 4 }}>
+            Limpar filtros ✕
+          </button>
+        )}
+      </div>
+
+      {/* Aviso de conexão Metabase */}
+      {convStatus === 'sem_chave' && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 14px', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, marginBottom: 14, fontSize: 12, color: '#92400e' }}>
+          <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>Conversões indisponíveis no ambiente local — <b>{convMsg}</b> Os números por cupom aparecem assim que a chave estiver configurada (em produção já funciona).</span>
+        </div>
+      )}
+      {convStatus === 'erro' && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 14px', background: `${T.destructive}11`, border: `1px solid ${T.destructive}55`, borderRadius: 8, marginBottom: 14, fontSize: 12, color: T.destructive }}>
+          <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} /> <span>Erro ao consultar Metabase: {convMsg}</span>
+        </div>
+      )}
+
+      {/* KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10, marginBottom: 16 }}>
+        {[
+          { label: 'Influenciadores', value: String(filtrados.length), color: COR },
+          { label: 'Conversões (cupons)', value: convStatus === 'ok' ? totalConv.toLocaleString('pt-BR') : '—', color: '#10b981' },
+          { label: 'R$ em reservas', value: convStatus === 'ok' ? fmtBRL0(totalValor) : '—', color: '#f59e0b' },
+          { label: 'Contratados', value: String(filtrados.filter(r => r.status?.toLowerCase() === 'contratado').length), color: '#065f46' },
+        ].map(kpi => (
+          <div key={kpi.label} style={{ background: T.muted, border: `1px solid ${T.border}`, borderRadius: 10, padding: '12px 16px' }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: T.mutedFg, margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{kpi.label}</p>
+            <p style={{ fontSize: 18, fontWeight: 800, color: kpi.color, margin: 0 }}>{kpi.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {convStatus === 'ok' && (
+        <p style={{ fontSize: 11, color: T.mutedFg, margin: '0 0 12px' }}>
+          <Calendar size={11} style={{ display: 'inline', verticalAlign: -1, marginRight: 4 }} />
+          Conversões e R$ em reservas nas cabanas do Vistas (VST) referentes a: <b style={{ color: COR }}>{periodoLabel}</b> (pela data da reserva)
+        </p>
+      )}
+      {filtrados.length === 0 ? (
+        <p style={{ fontSize: 13, color: T.mutedFg, fontStyle: 'italic', textAlign: 'center', padding: '24px 0' }}>Nenhum influenciador com os filtros aplicados.</p>
+      ) : (
+        <>
+          {/* Cards com foto — altura limitada (~2 linhas) com scroll interno */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 20, maxHeight: 540, overflowY: 'auto', paddingRight: 6 }}>
+            {ordenados.map(r => {
+              const c = convFor(r.cupom)
+              const o = outrosFor(r.cupom)
+              const editando = editFotoId === r.id
+              return (
+                <div key={r.id} style={{ background: '#fff', border: `1px solid ${GS.cardBorder}`, borderRadius: 12, padding: '16px 14px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', position: 'relative' }}>
+                  {/* Foto + editar */}
+                  <div style={{ position: 'relative', marginBottom: 8 }}>
+                    <InfluAvatar url={r.foto || fotos[r.id]} perfil={r.perfil} size={68} />
+                    <button title="Trocar foto" onClick={() => { setEditFotoId(editando ? null : r.id); setFotoInput(fotos[r.id] || '') }}
+                      style={{ position: 'absolute', bottom: -2, right: -2, width: 24, height: 24, borderRadius: '50%', background: COR, border: '2px solid #fff', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                      <Pencil size={11} />
+                    </button>
+                  </div>
+                  {editando && (
+                    <div style={{ display: 'flex', gap: 4, marginBottom: 8, width: '100%' }}>
+                      <input autoFocus value={fotoInput} onChange={e => setFotoInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') saveFoto(r.id, fotoInput); if (e.key === 'Escape') { setEditFotoId(null); setFotoInput('') } }}
+                        placeholder="Colar URL da foto"
+                        style={{ flex: 1, minWidth: 0, padding: '4px 8px', fontSize: 11, border: `1px solid ${COR}`, borderRadius: 6, outline: 'none' }} />
+                      <button onClick={() => saveFoto(r.id, fotoInput)} style={{ padding: '0 8px', background: COR, color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}><Check size={13} /></button>
+                    </div>
+                  )}
+                  {/* Perfil */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: GS.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130 }}>{r.perfil || '—'}</span>
+                    {r.link_perfil?.startsWith('http') && (
+                      <a href={r.link_perfil.split('\n')[0]} target="_blank" rel="noopener noreferrer" style={{ color: COR, display: 'flex' }}><ExternalLink size={11} /></a>
+                    )}
+                  </div>
+                  {r.seguidores && <span style={{ fontSize: 11, color: GS.textMuted, marginBottom: 6 }}>{r.seguidores} seguidores</span>}
+                  {/* Status */}
+                  {r.status && <span style={{ ...statusStyle(r.status), fontSize: 10, fontWeight: 600, borderRadius: 20, padding: '2px 10px', marginBottom: 10 }}>{r.status}</span>}
+                  {/* Visita */}
+                  <div style={{ width: '100%', borderTop: `1px solid ${GS.cardBorder}`, paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 11, color: GS.textMuted }}>
+                      <Calendar size={11} /> {r.data_visita ? `Visita ${r.data_visita}` : 'Sem data de visita'}
+                    </div>
+                    {r.cupom && <div style={{ fontSize: 11, color: GS.textMuted }}>Cupom <span style={{ fontWeight: 700, color: COR }}>{r.cupom}</span></div>}
+                    {/* Conversões */}
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                      <div style={{ flex: 1, background: '#ecfdf5', borderRadius: 8, padding: '6px 4px' }}>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: '#059669', lineHeight: 1 }}>{c ? c.conversoes : (convStatus === 'ok' ? 0 : '—')}</div>
+                        <div style={{ fontSize: 9, color: '#059669', fontWeight: 600, textTransform: 'uppercase', marginTop: 2 }}>conversões</div>
+                      </div>
+                      <div style={{ flex: 1.3, background: '#fffbeb', borderRadius: 8, padding: '6px 4px' }}>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: '#d97706', lineHeight: 1 }}>{c ? fmtBRL0(c.valor) : (convStatus === 'ok' ? 'R$ 0' : '—')}</div>
+                        <div style={{ fontSize: 9, color: '#d97706', fontWeight: 600, textTransform: 'uppercase', marginTop: 2 }}>em reservas</div>
+                      </div>
+                    </div>
+                    {convStatus === 'ok' && o.conversoes > 0 && (
+                      <div style={{ marginTop: 6, padding: '5px 8px', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, fontSize: 10, color: '#92400e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#d97706', flexShrink: 0 }} />
+                        <span>Outros imóveis: <b>{o.conversoes}</b> · <b>{fmtBRL0(o.valor)}</b></span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Ranking por conversão */}
+          <div style={{ background: '#fff', border: `1px solid ${GS.cardBorder}`, borderRadius: 12, padding: '16px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+            <p style={{ fontSize: 12, fontWeight: 700, color: GS.text, margin: '0 0 14px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Ranking por conversão</p>
+            {convStatus !== 'ok' ? (
+              <p style={{ fontSize: 12, color: GS.textMuted, fontStyle: 'italic', margin: 0 }}>O ranking aparece quando as conversões do Metabase estiverem disponíveis.</p>
+            ) : ranked.every(x => !x.c?.conversoes) ? (
+              <p style={{ fontSize: 12, color: GS.textMuted, fontStyle: 'italic', margin: 0 }}>Nenhuma conversão registrada para os cupons deste período.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 168, overflowY: 'auto', paddingRight: 6 }}>
+                {ranked.map(({ r, c }, i) => {
+                  const conversoes = c?.conversoes || 0
+                  const valor = c?.valor || 0
+                  return (
+                    <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: GS.textMuted, width: 18, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
+                      <InfluAvatar url={r.foto || fotos[r.id]} perfil={r.perfil} size={28} />
+                      <span style={{ fontSize: 12, fontWeight: 600, color: GS.text, width: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{r.perfil || '—'}</span>
+                      <div style={{ flex: 1, background: '#f3f4f6', borderRadius: 99, height: 16, overflow: 'hidden', minWidth: 40 }}>
+                        <div style={{ height: '100%', borderRadius: 99, width: `${(conversoes / maxConv) * 100}%`, background: COR, minWidth: conversoes > 0 ? 4 : 0, transition: 'width 0.4s' }} />
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#059669', width: 56, textAlign: 'right', flexShrink: 0 }}>{conversoes} conv.</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#d97706', width: 80, textAlign: 'right', flexShrink: 0 }}>{fmtBRL0(valor)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+          {convStatus === 'ok' && totalOutros > 0 && (
+            <div style={{ marginTop: 12, padding: '9px 13px', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, fontSize: 12, color: '#92400e', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#d97706', flexShrink: 0 }} />
+              <span>
+                Somando os influenciadores exibidos: <b>{totalOutros}</b> reserva{totalOutros > 1 ? 's' : ''} desses cupons {totalOutros > 1 ? 'foram' : 'foi'} em outros imóveis (fora das cabanas VST) <b>({fmtBRL0(totalOutrosValor)})</b> — não contabilizada{totalOutros > 1 ? 's' : ''} nos números acima. Veja o detalhe por influenciador em cada card.
+              </span>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -1399,7 +1770,11 @@ function SocialMediaSection() {
         )}
       </div>
       <div style={{ marginTop: 28 }}>
-  <p style={{ fontSize: 13, fontWeight: 700, color: T.cardFg, margin: "0 0 12px", borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>Influenciadores</p>
+  <p style={{ fontSize: 13, fontWeight: 700, color: T.cardFg, margin: "0 0 12px", borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>Dashboard de Influenciadores</p>
+  <InfluenciadoresDashboard />
+</div>
+<div style={{ marginTop: 28 }}>
+  <p style={{ fontSize: 13, fontWeight: 700, color: T.cardFg, margin: "0 0 12px", borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>Planilha de Influenciadores</p>
   <InfluenciadoresSection />
 </div>
 <div style={{ marginTop: 32 }}>

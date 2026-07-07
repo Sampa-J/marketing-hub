@@ -1,225 +1,195 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
-import type { DailyRecord } from "@/lib/hospedes-analise-db";
+import { useState } from "react";
 
-interface MatchedReservation {
+interface ByDate {
   date: string;
-  reserva: string;
-  effectivePrice: number;
-  cleaningFee: number;
+  conversoes: number;
+  fatEffective: number;
   fatSeazone: number;
-  city: string;
-  propertyCode: string;
 }
-
-interface ImportResult {
-  total: number;
-  matched: MatchedReservation[];
-  notMatched: { date: string; reserva: string }[];
-  matchedCount: number;
-  notMatchedCount: number;
+interface Rejected {
+  date: string;
+  code: string;
+  value: number;
+  motivo: string;
 }
-
-function uid() {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+interface ApiResult {
+  validCount?: number;
+  savedCount?: number;
+  rejectedCount: number;
+  byDate: ByDate[];
+  rejected: Rejected[];
 }
 
 function fmtCurrency(v: number) {
-  if (!v) return "—";
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
-
 function fmtDate(d: string) {
   const [, m, day] = d.split("-");
   return `${day}/${m}`;
 }
 
-async function apiSaveRecord(record: DailyRecord): Promise<void> {
-  await fetch("/api/hospedes-analise/records", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(record),
-  });
-}
+const PLACEHOLDER = `01/07/2026 | LW600J | R$ 1.170
+01/07/2026 | LW593J | R$ 1.126
+28/06/2026 | ME309J | R$ 966`;
 
-export default function NewbyteImportSection({ onSaved }: { onSaved?: () => void }) {
+export default function NewbyteImportSection({ onSaved }: { onSaved: () => Promise<void> | void }) {
   const [pastedData, setPastedData] = useState("");
-  const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
-  const [result, setResult] = useState<ImportResult | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [savingStatus, setSavingStatus] = useState<"idle" | "loading" | "done">("idle");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<ApiResult | null>(null);
+  const [analyzed, setAnalyzed] = useState(false);
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleImport = async () => {
-    if (!pastedData.trim()) return;
-    setStatus("loading"); setErrorMsg(null); setResult(null);
+  const call = async (mode: "analyze" | "save"): Promise<ApiResult | null> => {
+    setLoading(true);
+    setError(null);
+    setSavedMsg(null);
     try {
       const res = await fetch("/api/hospedes-analise/import-newbyte", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pastedData }),
+        body: JSON.stringify({ pastedData, mode }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Erro ao importar");
-      setResult(data); setStatus("done");
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : String(err));
-      setStatus("error");
-    }
-  };
-
-  const byDate = useMemo(() => {
-    if (!result?.matched) return new Map<string, MatchedReservation[]>();
-    const map = new Map<string, MatchedReservation[]>();
-    for (const m of result.matched) {
-      if (!map.has(m.date)) map.set(m.date, []);
-      map.get(m.date)!.push(m);
-    }
-    return map;
-  }, [result]);
-
-  const handleSaveAll = async () => {
-    if (!result?.matched.length) return;
-    setSavingStatus("loading");
-    try {
-      for (const [date, items] of byDate) {
-        const totalEff = items.reduce((s, i) => s + i.effectivePrice, 0);
-        const totalCleaning = items.reduce((s, i) => s + i.cleaningFee, 0);
-        const totalFatSz = items.reduce((s, i) => s + i.fatSeazone, 0);
-        const reservations = items.map((i) => ({
-          id: i.reserva ? `nb-${i.reserva}` : uid(),
-          source: "newbyte",
-          utm: "",
-          coupon: "",
-          destination: i.city,
-          reservationCode: i.reserva || undefined,
-          propertyCode: i.propertyCode,
-        }));
-        const record: DailyRecord = {
-          id: uid(),
-          date,
-          type: "relatorio-newbyte",
-          data: {
-            tickets: 0,
-            conversoes: items.length,
-            fatEffective: Math.round(totalEff * 100) / 100,
-            fatSeazone: Math.round(totalFatSz * 100) / 100,
-            cleaningFee: Math.round(totalCleaning * 100) / 100,
-          },
-          reservations,
-        };
-        await apiSaveRecord(record);
+      if (!res.ok) {
+        setError(data.error || "Erro ao processar");
+        return null;
       }
-      setSavingStatus("done");
-      onSaved?.();
-    } catch {
-      setSavingStatus("idle");
+      return data as ApiResult;
+    } finally {
+      setLoading(false);
     }
   };
+
+  const handleAnalyze = async () => {
+    const data = await call("analyze");
+    if (data) {
+      setResult(data);
+      setAnalyzed(true);
+    }
+  };
+
+  const handleSave = async () => {
+    const data = await call("save");
+    if (data) {
+      setResult(data);
+      setSavedMsg(`${data.savedCount ?? 0} reserva(s) registrada(s) na Newbyte.`);
+      setAnalyzed(false);
+      setPastedData("");
+      await onSaved();
+    }
+  };
+
+  const validCount = result?.validCount ?? result?.savedCount ?? 0;
+  const box: React.CSSProperties = { background: "#fff", border: "1px solid #E8EEF8", borderRadius: 12, padding: 20 };
+  const label: React.CSSProperties = { fontSize: 11, fontWeight: 600, color: "#7C7C7C", textTransform: "uppercase" };
 
   return (
-    <div style={{ background: "#fff", border: "1px solid #E8EEF8", borderRadius: 12, padding: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-        <div style={{ width: 4, height: 18, borderRadius: 2, background: "#7C3AED" }} />
-        <p style={{ fontSize: 13, fontWeight: 700, color: "#00143D", margin: 0 }}>Importar Newbyte via Sheets</p>
-      </div>
-      <p style={{ fontSize: 12, color: "#7C7C7C", marginBottom: 12 }}>
-        Cole os dados do Sheets (tab-separated) com colunas: <strong>DATA | CANAL | CIDADE | IMÓVEL | VALOR | DESCONTO | RESERVA | HÓSPEDE | ANALISTA</strong>.
+    <div style={box}>
+      <p style={{ fontSize: 13, fontWeight: 700, color: "#00143D", marginBottom: 4 }}>
+        📋 NewByte — importar por código (campanha Vistas de Anitá MKT)
       </p>
+      <p style={{ fontSize: 12, color: "#7C7C7C", marginBottom: 12 }}>
+        Cole as reservas no formato <strong>DD/MM/AAAA | CÓDIGO | VALOR</strong> (uma por linha). Linhas de “Soma do dia” e vazias são ignoradas.
+        Cada reserva é validada: precisa existir no Metabase (3335), não pode já estar em com/sem atendimento nem já registrada na Newbyte.
+        <strong> Fat. Sz = (valor − taxa de limpeza do Metabase) × 24%.</strong>
+      </p>
+
       <textarea
         value={pastedData}
-        onChange={(e) => { setPastedData(e.target.value); setStatus("idle"); setResult(null); setErrorMsg(null); }}
-        placeholder={"Cole aqui os dados do Sheets...\n\nExemplo:\n15/04\tCampanha VST\tAnitápolis - SC\tVST\tR$ 530,00\tS/ CUPOM\tJG212J\tPatrick Gabriel\tLaura"}
-        rows={6}
-        style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #E8EEF8", fontSize: 12, fontFamily: "monospace", resize: "vertical", boxSizing: "border-box", marginBottom: 10 }}
+        onChange={(e) => { setPastedData(e.target.value); setAnalyzed(false); }}
+        placeholder={PLACEHOLDER}
+        rows={7}
+        style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #E8EEF8", fontSize: 13, fontFamily: "monospace", boxSizing: "border-box", resize: "vertical" }}
       />
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <button onClick={handleImport} disabled={!pastedData.trim() || status === "loading"} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: !pastedData.trim() || status === "loading" ? "#E8EEF8" : "#7C3AED", color: !pastedData.trim() || status === "loading" ? "#7C7C7C" : "#fff", fontWeight: 700, fontSize: 12, cursor: !pastedData.trim() || status === "loading" ? "default" : "pointer" }}>
-          {status === "loading" ? "⏳ Correlacionando..." : "🔍 Correlacionar com Metabase"}
+
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button
+          onClick={handleAnalyze}
+          disabled={loading || !pastedData.trim()}
+          style={{ padding: "10px 20px", borderRadius: 8, border: "1px solid #0055FF", background: "#EBF2FF", color: "#0055FF", fontWeight: 700, fontSize: 13, cursor: loading || !pastedData.trim() ? "not-allowed" : "pointer", opacity: loading || !pastedData.trim() ? 0.6 : 1 }}
+        >
+          {loading ? "Processando..." : "Analisar"}
         </button>
-        {status === "done" && result && (
-          <span style={{ fontSize: 11, color: result.matchedCount > 0 ? "#10B981" : "#FC6058" }}>
-            {result.matchedCount}/{result.total} batidos{result.notMatchedCount > 0 && <span style={{ color: "#F59E0B" }}> · {result.notMatchedCount} não encontrados</span>}
-          </span>
-        )}
+        <button
+          onClick={handleSave}
+          disabled={loading || !analyzed || validCount === 0}
+          title={!analyzed ? "Analise primeiro" : ""}
+          style={{ padding: "10px 20px", borderRadius: 8, border: "none", background: !analyzed || validCount === 0 ? "#CBD5E1" : "#10B981", color: "#fff", fontWeight: 700, fontSize: 13, cursor: loading || !analyzed || validCount === 0 ? "not-allowed" : "pointer" }}
+        >
+          Registrar {analyzed && validCount > 0 ? `${validCount} reserva(s)` : ""}
+        </button>
       </div>
 
-      {status === "error" && errorMsg && (
-        <div style={{ marginTop: 10, padding: "10px 14px", background: "#FEF2F2", borderRadius: 8, border: "1px solid #FECACA" }}>
-          <p style={{ fontSize: 12, color: "#DC2626" }}>❌ {errorMsg}</p>
-        </div>
+      {error && (
+        <div style={{ marginTop: 12, padding: "10px 14px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 8, color: "#B91C1C", fontSize: 13 }}>{error}</div>
+      )}
+      {savedMsg && (
+        <div style={{ marginTop: 12, padding: "10px 14px", background: "#ECFDF5", border: "1px solid #A7F3D0", borderRadius: 8, color: "#065F46", fontSize: 13, fontWeight: 600 }}>✓ {savedMsg}</div>
       )}
 
-      {status === "done" && result && (
-        <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-            <div style={{ background: "#ECFDF5", borderRadius: 8, padding: 12, textAlign: "center" }}>
-              <p style={{ fontSize: 20, fontWeight: 700, color: "#10B981", margin: 0 }}>{result.matchedCount}</p>
-              <p style={{ fontSize: 11, color: "#7C7C7C", margin: 0 }}>Bateram</p>
+      {result && (
+        <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ flex: 1, padding: "10px 14px", background: "#ECFDF5", borderRadius: 8, borderLeft: "3px solid #10B981" }}>
+              <p style={label}>Válidas</p>
+              <p style={{ fontSize: 20, fontWeight: 700, color: "#065F46", margin: 0 }}>{validCount}</p>
             </div>
-            <div style={{ background: "#FFFBEB", borderRadius: 8, padding: 12, textAlign: "center" }}>
-              <p style={{ fontSize: 20, fontWeight: 700, color: "#F59E0B", margin: 0 }}>{result.notMatchedCount}</p>
-              <p style={{ fontSize: 11, color: "#7C7C7C", margin: 0 }}>Não batem</p>
-            </div>
-            <div style={{ background: "#F5F3FF", borderRadius: 8, padding: 12, textAlign: "center" }}>
-              <p style={{ fontSize: 20, fontWeight: 700, color: "#7C3AED", margin: 0 }}>{fmtCurrency(result.matched.reduce((s, m) => s + m.fatSeazone, 0))}</p>
-              <p style={{ fontSize: 11, color: "#7C7C7C", margin: 0 }}>Fat. Seazone</p>
+            <div style={{ flex: 1, padding: "10px 14px", background: "#FEF2F2", borderRadius: 8, borderLeft: "3px solid #FC6058" }}>
+              <p style={label}>Recusadas</p>
+              <p style={{ fontSize: 20, fontWeight: 700, color: "#B91C1C", margin: 0 }}>{result.rejectedCount}</p>
             </div>
           </div>
 
-          {result.matchedCount > 0 && (
-            <button onClick={handleSaveAll} disabled={savingStatus === "loading"} style={{ padding: "10px 20px", borderRadius: 8, border: "none", background: savingStatus === "done" ? "#10B981" : "#7C3AED", color: "#fff", fontWeight: 700, fontSize: 13, cursor: savingStatus === "loading" ? "default" : "pointer" }}>
-              {savingStatus === "loading" ? "⏳ Salvando..." : savingStatus === "done" ? "✓ Salvo! Recarregando..." : `💾 Salvar ${result.matchedCount} reserva(s) como Newbyte`}
-            </button>
-          )}
-
-          {result.matched.length > 0 && (
+          {result.byDate.length > 0 && (
             <div>
-              <p style={{ fontSize: 12, fontWeight: 600, color: "#7C7C7C", marginBottom: 6 }}>Reservas batidas ({result.matched.length})</p>
-              <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid #E8EEF8" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                  <thead>
-                    <tr style={{ background: "#F8FAFF" }}>
-                      <th style={{ padding: "6px 10px", textAlign: "left", fontWeight: 600, color: "#7C7C7C" }}>Data</th>
-                      <th style={{ padding: "6px 10px", textAlign: "left", fontWeight: 600, color: "#7C7C7C" }}>Reserva</th>
-                      <th style={{ padding: "6px 10px", textAlign: "right", fontWeight: 600, color: "#7C7C7C" }}>Fat. Eff.</th>
-                      <th style={{ padding: "6px 10px", textAlign: "right", fontWeight: 600, color: "#7C7C7C" }}>Tx. Limp.</th>
-                      <th style={{ padding: "6px 10px", textAlign: "right", fontWeight: 600, color: "#7C7C7C" }}>Fat. Sz</th>
-                      <th style={{ padding: "6px 10px", textAlign: "left", fontWeight: 600, color: "#7C7C7C" }}>Cidade</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.matched.map((m, i) => (
-                      <tr key={i} style={{ borderBottom: "1px solid #F0F3FA" }}>
-                        <td style={{ padding: "5px 10px", color: "#00143D", fontWeight: 500 }}>{fmtDate(m.date)}</td>
-                        <td style={{ padding: "5px 10px", color: "#0055FF", fontFamily: "monospace", fontSize: 11 }}>{m.reserva}</td>
-                        <td style={{ padding: "5px 10px", textAlign: "right" }}>{fmtCurrency(m.effectivePrice)}</td>
-                        <td style={{ padding: "5px 10px", textAlign: "right", color: "#94A3B8" }}>{fmtCurrency(m.cleaningFee)}</td>
-                        <td style={{ padding: "5px 10px", textAlign: "right", color: "#7C3AED", fontWeight: 600 }}>{fmtCurrency(m.fatSeazone)}</td>
-                        <td style={{ padding: "5px 10px", color: "#00143D" }}>{m.city || "—"}</td>
-                      </tr>
+              <p style={{ ...label, marginBottom: 6 }}>Por dia {analyzed ? "(prévia)" : "(registrado)"}</p>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr>
+                    {["Data", "Conversões", "Fat. Eff.", "Fat. Sz"].map((h) => (
+                      <th key={h} style={{ textAlign: h === "Data" ? "left" : "right", padding: "6px 10px", color: "#7C7C7C", fontWeight: 600, borderBottom: "1px solid #E8EEF8" }}>{h}</th>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.byDate.map((d) => (
+                    <tr key={d.date} style={{ borderBottom: "1px solid #F0F3FA" }}>
+                      <td style={{ padding: "6px 10px", fontWeight: 600, color: "#00143D" }}>{fmtDate(d.date)}</td>
+                      <td style={{ padding: "6px 10px", textAlign: "right" }}>{d.conversoes}</td>
+                      <td style={{ padding: "6px 10px", textAlign: "right" }}>{fmtCurrency(d.fatEffective)}</td>
+                      <td style={{ padding: "6px 10px", textAlign: "right", color: "#7C3AED", fontWeight: 600 }}>{fmtCurrency(d.fatSeazone)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
 
-          {result.notMatched.length > 0 && (
+          {result.rejected.length > 0 && (
             <div>
-              <p style={{ fontSize: 12, fontWeight: 600, color: "#7C7C7C", marginBottom: 6 }}>Não encontrados ({result.notMatched.length})</p>
-              <div style={{ background: "#FFFBEB", borderRadius: 8, padding: "8px 12px" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-                  <tbody>
-                    {result.notMatched.map((n, i) => (
-                      <tr key={i}>
-                        <td style={{ padding: "3px 0", color: "#92400E" }}>{fmtDate(n.date)}</td>
-                        <td style={{ padding: "3px 0", color: "#92400E", fontFamily: "monospace" }}>{n.reserva}</td>
-                      </tr>
+              <p style={{ ...label, marginBottom: 6, color: "#B91C1C" }}>Recusadas (não registradas)</p>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr>
+                    {["Data", "Código", "Valor", "Motivo"].map((h) => (
+                      <th key={h} style={{ textAlign: "left", padding: "6px 10px", color: "#7C7C7C", fontWeight: 600, borderBottom: "1px solid #E8EEF8" }}>{h}</th>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.rejected.map((r, i) => (
+                    <tr key={`${r.code}-${i}`} style={{ borderBottom: "1px solid #F0F3FA" }}>
+                      <td style={{ padding: "6px 10px", color: "#00143D" }}>{fmtDate(r.date)}</td>
+                      <td style={{ padding: "6px 10px", fontFamily: "monospace", color: "#7C3AED", fontWeight: 600 }}>{r.code}</td>
+                      <td style={{ padding: "6px 10px" }}>{fmtCurrency(r.value)}</td>
+                      <td style={{ padding: "6px 10px", color: "#B91C1C" }}>{r.motivo}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

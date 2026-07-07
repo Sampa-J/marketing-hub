@@ -8,6 +8,7 @@ export interface ReservationDetail {
   destination: string;
   reservationCode?: string;
   propertyCode?: string;
+  effectivePrice?: number;
 }
 
 export interface DailyRecord {

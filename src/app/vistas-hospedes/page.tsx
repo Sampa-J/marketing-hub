@@ -1,5 +1,8 @@
 "use client"
 import { CalendarioConteudoVistas } from './_components/CalendarioConteudoVistas';
+import { PostsEngajamentoVistas } from './_components/PostsEngajamentoVistas';
+import { CollabsVistas } from './_components/CollabsVistas';
+import { SectionNavVistas } from './_components/SectionNavVistas';
 import { useState, useEffect, useCallback, useRef } from "react"
 import Link from "next/link"
 import { ChevronLeft, ChevronRight, Loader2, Plus, Trash2, Check, Calendar, Link2, AlertTriangle, Pencil, TrendingUp, TrendingDown, RefreshCw, Sparkles, Copy, ChevronDown, ChevronUp, ArrowUpDown, ExternalLink, X } from "lucide-react"
@@ -1769,20 +1772,22 @@ function SocialMediaSection() {
           </div>
         )}
       </div>
-      <div style={{ marginTop: 28 }}>
-  <p style={{ fontSize: 13, fontWeight: 700, color: T.cardFg, margin: "0 0 12px", borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>Dashboard de Influenciadores</p>
-  <InfluenciadoresDashboard />
-</div>
-<div style={{ marginTop: 28 }}>
-  <p style={{ fontSize: 13, fontWeight: 700, color: T.cardFg, margin: "0 0 12px", borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>Planilha de Influenciadores</p>
-  <InfluenciadoresSection />
-</div>
-<div style={{ marginTop: 32 }}>
-  <p style={{ fontSize: 13, fontWeight: 700, color: T.cardFg, margin: "0 0 16px", borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>
-    Calendário de Conteúdo
-  </p>
-  <CalendarioConteudoVistas />
-</div>
+    </div>
+  )
+}
+
+/* ── Bloco de Influenciadores (Dashboard + Planilha) ── */
+function InfluenciadoresBloco() {
+  return (
+    <div>
+      <div style={{ marginBottom: 28 }}>
+        <p style={{ fontSize: 13, fontWeight: 700, color: T.cardFg, margin: "0 0 12px", borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>Dashboard de Influenciadores</p>
+        <InfluenciadoresDashboard />
+      </div>
+      <div>
+        <p style={{ fontSize: 13, fontWeight: 700, color: T.cardFg, margin: "0 0 12px", borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>Planilha de Influenciadores</p>
+        <InfluenciadoresSection />
+      </div>
     </div>
   )
 }
@@ -1820,8 +1825,9 @@ export default function VistasHospedesPage() {
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: COR, flexShrink: 0 }} />
         <span style={{ fontSize: 14, fontWeight: 700, color: T.cardFg }}>Vistas de Anitá — Hóspedes</span>
       </header>
+      <SectionNavVistas />
       <main style={{ padding: "24px 24px 64px", maxWidth: 1100, margin: "0 auto" }}>
-        <section style={{ marginBottom: 28 }}>
+        <section id="reservas" style={{ marginBottom: 28, scrollMarginTop: 110 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
             <div>
               <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.mutedFg, margin: "0 0 2px" }}>Nekt · Reservas Válidas (Stays)</p>
@@ -1869,6 +1875,7 @@ export default function VistasHospedesPage() {
           )}
         </section>
 
+        {/* Ocultado a pedido — abas "Plano de Ação", "Resultados" e "Mídia Paga"
         <section style={{ marginBottom: 28 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
             <Link href="/vistas-hospedes/plano-de-acao" style={{ textDecoration: "none" }}>
@@ -1903,7 +1910,9 @@ export default function VistasHospedesPage() {
             </Link>
           </div>
         </section>
+        */}
 
+        {/* Ocultado a pedido — seção "Nekt · Meta Ads / Criativos Ativos"
         <section style={{ marginBottom: 28 }}>
           <div style={{ marginBottom: 14 }}>
             <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.mutedFg, margin: "0 0 2px" }}>Nekt · Meta Ads</p>
@@ -1911,13 +1920,46 @@ export default function VistasHospedesPage() {
           </div>
           <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "18px 20px", boxShadow: T.elevSm }}><CriativosSection /></div>
         </section>
+        */}
 
-        <section>
+        <section id="seguidores" style={{ marginBottom: 28, scrollMarginTop: 110 }}>
           <div style={{ marginBottom: 14 }}>
             <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.mutedFg, margin: "0 0 2px" }}>Instagram</p>
-            <h2 style={{ fontSize: 18, fontWeight: 800, color: T.cardFg, margin: 0 }}>Social Media</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 800, color: T.cardFg, margin: 0 }}>Meta de Seguidores</h2>
           </div>
           <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "18px 20px", boxShadow: T.elevSm }}><SocialMediaSection /></div>
+        </section>
+
+        <section id="engajamento" style={{ marginBottom: 28, scrollMarginTop: 110 }}>
+          <div style={{ marginBottom: 14 }}>
+            <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.mutedFg, margin: "0 0 2px" }}>Instagram</p>
+            <h2 style={{ fontSize: 18, fontWeight: 800, color: T.cardFg, margin: 0 }}>Engajamento por Post</h2>
+          </div>
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "18px 20px", boxShadow: T.elevSm }}><PostsEngajamentoVistas /></div>
+        </section>
+
+        <section id="collabs" style={{ marginBottom: 28, scrollMarginTop: 110 }}>
+          <div style={{ marginBottom: 14 }}>
+            <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.mutedFg, margin: "0 0 2px" }}>Instagram</p>
+            <h2 style={{ fontSize: 18, fontWeight: 800, color: T.cardFg, margin: 0 }}>Collabs</h2>
+          </div>
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "18px 20px", boxShadow: T.elevSm }}><CollabsVistas /></div>
+        </section>
+
+        <section id="influenciadores" style={{ marginBottom: 28, scrollMarginTop: 110 }}>
+          <div style={{ marginBottom: 14 }}>
+            <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.mutedFg, margin: "0 0 2px" }}>Instagram</p>
+            <h2 style={{ fontSize: 18, fontWeight: 800, color: T.cardFg, margin: 0 }}>Influenciadores</h2>
+          </div>
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "18px 20px", boxShadow: T.elevSm }}><InfluenciadoresBloco /></div>
+        </section>
+
+        <section id="conteudo" style={{ scrollMarginTop: 110 }}>
+          <div style={{ marginBottom: 14 }}>
+            <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.mutedFg, margin: "0 0 2px" }}>Instagram</p>
+            <h2 style={{ fontSize: 18, fontWeight: 800, color: T.cardFg, margin: 0 }}>Conteúdo</h2>
+          </div>
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "18px 20px", boxShadow: T.elevSm }}><CalendarioConteudoVistas /></div>
         </section>
       </main>
     </div>

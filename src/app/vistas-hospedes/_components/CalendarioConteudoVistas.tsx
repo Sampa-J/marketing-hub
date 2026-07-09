@@ -1,13 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { Calendar, Lightbulb, PenTool } from 'lucide-react';
+import { Calendar, Lightbulb, PenTool, Users } from 'lucide-react';
 import { T } from '@/lib/constants';
 import { CalendarViewVistas } from './CalendarViewVistas';
 import { BacklogViewVistas } from './BacklogViewVistas';
 import { CreateContentViewVistas } from './CreateContentViewVistas';
+import { VisitaInfluencersVistas } from './VisitaInfluencersVistas';
 
 type Tab = 'calendario' | 'criar' | 'backlog';
+type CalMode = 'conteudo' | 'influencers';
 
 const TABS: { id: Tab; icon: typeof Calendar; label: string }[] = [
   { id: 'calendario', icon: Calendar, label: 'Calendário' },
@@ -17,6 +19,7 @@ const TABS: { id: Tab; icon: typeof Calendar; label: string }[] = [
 
 export function CalendarioConteudoVistas() {
   const [activeTab, setActiveTab] = useState<Tab>('calendario');
+  const [calMode, setCalMode] = useState<CalMode>('conteudo');
 
   return (
     <div>
@@ -44,7 +47,35 @@ export function CalendarioConteudoVistas() {
 
       {/* Content */}
       <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: 20 }}>
-        {activeTab === 'calendario' && <CalendarViewVistas />}
+        {activeTab === 'calendario' && (
+          <>
+            {/* Switch: Conteúdo Instagram | Visita Influencers */}
+            <div style={{ display: 'inline-flex', gap: 4, marginBottom: 20, background: T.cinza50, borderRadius: 10, padding: 4 }}>
+              {([
+                { id: 'conteudo', icon: Calendar, label: 'Conteúdo Instagram' },
+                { id: 'influencers', icon: Users, label: 'Visita Influencers' },
+              ] as const).map(({ id, icon: Icon, label }) => (
+                <button
+                  key={id}
+                  onClick={() => setCalMode(id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '7px 14px', borderRadius: 8,
+                    fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer',
+                    background: calMode === id ? T.card : 'transparent',
+                    color: calMode === id ? T.primary : T.mutedFg,
+                    boxShadow: calMode === id ? T.elevSm : 'none',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <Icon size={15} />
+                  {label}
+                </button>
+              ))}
+            </div>
+            {calMode === 'conteudo' ? <CalendarViewVistas /> : <VisitaInfluencersVistas />}
+          </>
+        )}
         {activeTab === 'criar' && <CreateContentViewVistas onNavigate={(tab) => setActiveTab(tab as Tab)} />}
         {activeTab === 'backlog' && <BacklogViewVistas />}
       </div>

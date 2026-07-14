@@ -9,6 +9,7 @@ import {
 import type { DailyRecord, DailySpending, ReservationDetail, FormulaConfig } from "@/lib/hospedes-analise-db";
 import { DEFAULT_FORMULA_CONFIG } from "@/lib/hospedes-analise-db";
 import NewbyteImportSection from "@/components/newbyte-import-section";
+import ManualPorCodigoSection from "@/components/manual-por-codigo-section";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -50,14 +51,6 @@ function todayStr() {
 async function apiGetRecords(): Promise<DailyRecord[]> {
   const r = await fetch("/api/hospedes-analise/records");
   return r.json();
-}
-
-async function apiSaveRecord(record: DailyRecord): Promise<void> {
-  await fetch("/api/hospedes-analise/records", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(record),
-  });
 }
 
 async function apiDeleteRecord(id: string): Promise<void> {
@@ -147,7 +140,8 @@ function buildAnalysisData(
     const row = ensure(r.date);
     const fatEff = parseMoneyValue(r.data.fatEffective);
     const cleaning = parseMoneyValue(r.data.cleaningFee);
-    const fatSzBase = config.szBase === "fat-effective" ? fatEff : (fatEff - cleaning);
+    // Regra travada: a taxa de limpeza é SEMPRE descontada antes de aplicar a taxa Seazone.
+    const fatSzBase = fatEff - cleaning;
     const fatSz = r.type === "relatorio-newbyte"
       ? parseMoneyValue(r.data.fatSeazone)
       : fatSzBase * config.szTaxa;
@@ -178,7 +172,7 @@ function buildAnalysisData(
     if (source === "sem-atendimento") { fatSz = row.fatSzSem; fatEff = row.fatEffSem; cleaning = row.cleaningSem; reservas = row.reservasSem; }
     else if (source === "com-atendimento") { fatSz = row.fatSzCom; fatEff = row.fatEffCom; cleaning = row.cleaningCom; reservas = row.reservasCom; }
     else if (source === "newbyte") { fatSz = row.fatSzNB; fatEff = row.fatEffNB; cleaning = row.cleaningNB; reservas = row.conversoesNB; }
-    const fatLiquido = config.liqSubtrairLimpeza ? fatEff - cleaning : fatEff;
+    const fatLiquido = fatEff - cleaning; // travado: sempre desconta limpeza
     const roiNum = config.roiNumerador === "fat-liquido" ? fatLiquido : config.roiNumerador === "fat-effective" ? fatEff : fatSz;
     const roiDenom = config.roiDenominador === "gasto-google" ? row.gastoGoogle : config.roiDenominador === "gasto-meta" ? row.gastoMeta : row.gastoTotal;
     const roi = roiDenom > 0 ? (roiNum - roiDenom) / roiDenom : 0;
@@ -333,24 +327,47 @@ function ResultadosTab({ records, spending, onRecordsChange, formulaConfig, onFo
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [metrics, setMetrics] = useState<string[]>(["fatSzTotal", "reservasTotal"]);
-  const [fixing, setFixing] = useState(false);
-  const [fixResult, setFixResult] = useState<{ updated: number } | null>(null);
   const [draftConfig, setDraftConfig] = useState<FormulaConfig>(formulaConfig);
   const [editingFormulas, setEditingFormulas] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
 
-  const handleFixFatSeazone = async () => {
-    setFixing(true);
-    setFixResult(null);
+  // ── Manutenção: revalidar pelo Metabase / restaurar backup ──
+  const [revalidating, setRevalidating] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [manutMsg, setManutMsg] = useState<string | null>(null);
+  const [revalResult, setRevalResult] = useState<{
+    recordsRevalidados: number; reservasRevalidadas: number; recordsInalterados: number;
+    flaggedCount: number; flagged: { date: string; tipo: string; motivo: string }[];
+  } | null>(null);
+
+  const reloadRecords = async () => {
+    const updated = await fetch("/api/hospedes-analise/records").then((r) => r.json());
+    onRecordsChange(updated);
+  };
+
+  const handleRevalidate = async () => {
+    if (!confirm("Revalidar todos os registros de mídia pelo Metabase? Um backup é salvo antes. O Newbyte não é afetado.")) return;
+    setRevalidating(true); setManutMsg(null); setRevalResult(null);
     try {
-      const res = await fetch("/api/hospedes-analise/fix-fat-seazone", { method: "POST" });
+      const res = await fetch("/api/hospedes-analise/revalidate", { method: "POST" });
       const json = await res.json();
-      setFixResult(json);
-      const updated = await fetch("/api/hospedes-analise/records").then((r) => r.json());
-      onRecordsChange(updated);
-    } finally {
-      setFixing(false);
-    }
+      if (!res.ok) { setManutMsg(json.error || "Erro ao revalidar"); return; }
+      setRevalResult(json);
+      await reloadRecords();
+    } finally { setRevalidating(false); }
+  };
+
+  const handleRestore = async () => {
+    if (!confirm("Restaurar a versão anterior (último backup)? As mudanças recentes nos dados serão desfeitas.")) return;
+    setRestoring(true); setManutMsg(null);
+    try {
+      const res = await fetch("/api/hospedes-analise/restore", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) { setManutMsg(json.error || "Erro ao restaurar"); return; }
+      setManutMsg(`↩️ Restaurado: ${json.restored} registro(s) da versão anterior.`);
+      setRevalResult(null);
+      await reloadRecords();
+    } finally { setRestoring(false); }
   };
 
   const data = useMemo(
@@ -423,12 +440,6 @@ function ResultadosTab({ records, spending, onRecordsChange, formulaConfig, onFo
             <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #E8EEF8", fontSize: 13, background: "#fff" }} />
           </div>
         </div>
-        <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #F0F3FA", display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={handleFixFatSeazone} disabled={fixing} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #E8EEF8", background: fixing ? "#F0F3FA" : "#fff", fontSize: 12, cursor: fixing ? "not-allowed" : "pointer", color: "#0055FF", fontWeight: 600 }}>
-            {fixing ? "Corrigindo..." : "Corrigir Fat. Seazone nos dados"}
-          </button>
-          {fixResult && <span style={{ fontSize: 12, color: "#10B981" }}>{fixResult.updated} registro(s) corrigido(s)</span>}
-        </div>
       </div>
 
       {hasData && (
@@ -493,11 +504,50 @@ function ResultadosTab({ records, spending, onRecordsChange, formulaConfig, onFo
 
       {hasData && <MonthlyRoiTable records={records} spending={spending} source={source} config={formulaConfig} />}
 
+      {/* Manutenção dos dados — revalidar pelo Metabase / restaurar */}
+      <div style={{ background: "#fff", border: "1px solid #E8EEF8", borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ padding: "14px 20px", borderBottom: "1px solid #F0F3FA", display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ width: 4, height: 18, borderRadius: 2, background: "#7C3AED" }} />
+          <p style={{ fontSize: 13, fontWeight: 700, color: "#00143D", margin: 0 }}>Manutenção dos dados</p>
+        </div>
+        <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button onClick={handleRevalidate} disabled={revalidating || restoring} style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: revalidating ? "#94A3B8" : "#0055FF", color: "#fff", fontWeight: 700, fontSize: 13, cursor: revalidating ? "default" : "pointer" }}>
+              {revalidating ? "Revalidando..." : "🔄 Revalidar tudo pelo Metabase"}
+            </button>
+            <button onClick={handleRestore} disabled={revalidating || restoring} style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid #E8EEF8", background: "#F8FAFF", color: "#334155", fontWeight: 600, fontSize: 13, cursor: restoring ? "default" : "pointer" }}>
+              {restoring ? "Restaurando..." : "↩️ Restaurar versão anterior"}
+            </button>
+          </div>
+          <p style={{ fontSize: 12, color: "#7C7C7C", margin: 0, lineHeight: 1.5 }}>
+            &quot;Revalidar&quot; casa cada reserva pelo código no Metabase e reescreve Effective / Limpeza / Fat. Seazone com o valor oficial. Antes, salva um <strong>backup no banco</strong>. Não apaga nada e não toca no Newbyte.
+          </p>
+          {manutMsg && <div style={{ padding: "10px 14px", background: "#EBF2FF", border: "1px solid #BFDBFE", borderRadius: 8, color: "#1D4ED8", fontSize: 13, fontWeight: 600 }}>{manutMsg}</div>}
+          {revalResult && (
+            <div style={{ padding: "12px 14px", background: "#F8FAFF", border: "1px solid #E8EEF8", borderRadius: 8, fontSize: 12.5, color: "#334155", lineHeight: 1.55 }}>
+              ✅ <strong>Backup salvo.</strong> {revalResult.recordsRevalidados} dia(s) corrigido(s) · {revalResult.reservasRevalidadas} reserva(s) revalidada(s) · {revalResult.recordsInalterados} já estava(m) certo(s).
+              {revalResult.flaggedCount > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  ⚠️ <strong>{revalResult.flaggedCount} registro(s)</strong> sem código ou fora do Metabase — deixei intocados:
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                    {revalResult.flagged.slice(0, 30).map((f, i) => (
+                      <span key={i} style={{ fontSize: 11.5, background: "#fff", border: "1px solid #E8EEF8", borderRadius: 6, padding: "2px 7px" }}>
+                        {fmtDate(f.date)} · {f.tipo === "midia-com-atendimento" ? "c/atend" : "s/atend"} · {f.motivo}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
       {(() => {
-        const szBaseLabel = formulaConfig.szBase === "fat-effective" ? "Fat. Effective" : "Fat. Líquido (Eff. − Limpeza)";
+        const szBaseLabel = "Fat. Effective − Tx. Limpeza"; // base travada
         const roiNumLabel = { "fat-seazone": "Fat. Seazone", "fat-liquido": "Fat. Líquido", "fat-effective": "Fat. Effective" }[formulaConfig.roiNumerador];
         const roiDenomLabel = { "gasto-total": "Gasto Total", "gasto-google": "Gasto Google", "gasto-meta": "Gasto Meta" }[formulaConfig.roiDenominador];
-        const liqLabel = formulaConfig.liqSubtrairLimpeza ? "Fat. Effective − Tx. Limpeza" : "Fat. Effective (sem desconto)";
+        const liqLabel = "Fat. Effective − Tx. Limpeza"; // travado
         const crNumLabel = { "gasto-total": "Gasto Total", "gasto-google": "Gasto Google", "gasto-meta": "Gasto Meta" }[formulaConfig.crNumerador];
 
         const selStyle: React.CSSProperties = { padding: "5px 8px", borderRadius: 7, border: "1px solid #CBD5E1", fontSize: 12, background: "#fff", cursor: "pointer" };
@@ -545,25 +595,13 @@ function ResultadosTab({ records, spending, onRecordsChange, formulaConfig, onFo
                 <div style={{ padding: "16px 18px", background: "#F8FAFF", borderRadius: 8, border: "1px dashed #CBD5E1", display: "flex", flexDirection: "column", gap: 16 }}>
                   <p style={{ fontSize: 12, fontWeight: 700, color: "#00143D", margin: 0 }}>Editar fórmulas</p>
 
-                  {/* Fat. Seazone */}
+                  {/* Fat. Seazone — base travada em (Effective − Limpeza); só a taxa é editável */}
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 12, fontWeight: 600, color: "#0055FF", minWidth: 100 }}>Fat. Seazone =</span>
-                    <select value={draftConfig.szBase} onChange={(e) => setDraftConfig((p) => ({ ...p, szBase: e.target.value as FormulaConfig["szBase"] }))} style={selStyle}>
-                      <option value="fat-liquido">Fat. Líquido (Eff. − Limpeza)</option>
-                      <option value="fat-effective">Fat. Effective (bruto)</option>
-                    </select>
-                    <span style={{ fontSize: 12, color: "#7C7C7C" }}>×</span>
+                    <span style={{ fontSize: 12, color: "#334155" }}>(Fat. Effective − Tx. Limpeza) ×</span>
                     <input type="number" min={0} max={100} step={0.1} value={(draftConfig.szTaxa * 100).toFixed(1)} onChange={(e) => setDraftConfig((p) => ({ ...p, szTaxa: (Number(e.target.value) || 0) / 100 }))} style={numInStyle} />
                     <span style={{ fontSize: 12, color: "#7C7C7C" }}>%</span>
-                  </div>
-
-                  {/* Fat. Líquido */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "#0EA5E9", minWidth: 100 }}>Fat. Líquido =</span>
-                    <select value={draftConfig.liqSubtrairLimpeza ? "com" : "sem"} onChange={(e) => setDraftConfig((p) => ({ ...p, liqSubtrairLimpeza: e.target.value === "com" }))} style={selStyle}>
-                      <option value="com">Fat. Effective − Tx. Limpeza</option>
-                      <option value="sem">Fat. Effective (sem desconto de limpeza)</option>
-                    </select>
+                    <span style={{ fontSize: 11, color: "#94A3B8" }}>🔒 limpeza sempre descontada</span>
                   </div>
 
                   {/* ROI */}
@@ -630,20 +668,8 @@ const TYPE_OPTIONS = [
   { value: "relatorio-newbyte", label: "Newbyte", emoji: "📋", desc: "Relatório IA" },
 ];
 
-function emptyReservation(): ReservationDetail {
-  return { id: uid(), source: "", utm: "", coupon: "", destination: "" };
-}
-
 function PreenchimentoTab({ records, spending, onRecordsChange, onSpendingChange }: { records: DailyRecord[]; spending: DailySpending[]; onRecordsChange: (r: DailyRecord[]) => void; onSpendingChange: (s: DailySpending[]) => void }) {
-  const [selectedType, setSelectedType] = useState("");
-  const [selectedDate, setSelectedDate] = useState(todayStr());
-  const [formData, setFormData] = useState<Record<string, string>>({});
-  const [reservations, setReservations] = useState<ReservationDetail[]>([]);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
   const [spDate, setSpDate] = useState(todayStr());
-  const [spGoogle, setSpGoogle] = useState("");
-  const [spMeta, setSpMeta] = useState("");
   const [spTiktok, setSpTiktok] = useState("");
   const [spSaved, setSpSaved] = useState(false);
   const [inlineEditId, setInlineEditId] = useState<string | null>(null);
@@ -651,32 +677,15 @@ function PreenchimentoTab({ records, spending, onRecordsChange, onSpendingChange
   const [inlineMeta, setInlineMeta] = useState("");
   const [inlineTiktok, setInlineTiktok] = useState("");
 
-  const resetForm = () => { setFormData({}); setReservations([]); setSaved(false); setEditingId(null); };
-
-  const calcFatSeazone = () => {
-    const ep = parseMoneyValue(formData.fatEffective);
-    const cf = parseMoneyValue(formData.cleaningFee);
-    setFormData((prev) => ({ ...prev, fatSeazone: ((ep - cf) * 0.24).toFixed(2) }));
-  };
-
-  const handleSave = async () => {
-    if (!selectedType || !selectedDate) return;
-    const record: DailyRecord = { id: editingId || uid(), date: selectedDate, type: selectedType, data: Object.fromEntries(Object.entries(formData).map(([k, v]) => [k, isNaN(Number(v)) ? v : Number(v)])), reservations };
-    const updated = editingId ? records.map((r) => (r.id === editingId ? record : r)) : [...records, record];
-    await apiSaveRecord(record);
-    onRecordsChange(updated);
-    setSaved(true);
-    setTimeout(() => { resetForm(); setSelectedType(""); }, 1500);
-  };
+  const reload = async () => { const r = await apiGetRecords(); onRecordsChange(r); };
 
   const handleSaveSpending = async () => {
     if (!spDate) return;
-    const metaTotal = Number(spMeta) || 0;
-    const entry: DailySpending = { id: uid(), date: spDate, google: Number(spGoogle) || 0, meta: metaTotal, tiktok: Number(spTiktok) || 0, meta565: metaTotal, meta566: 0 };
+    const entry: DailySpending = { id: uid(), date: spDate, google: 0, meta: 0, tiktok: Number(spTiktok) || 0 };
     await apiSaveSpending(entry);
     onSpendingChange([...spending, entry]);
     setSpSaved(true);
-    setTimeout(() => { setSpGoogle(""); setSpMeta(""); setSpTiktok(""); setSpSaved(false); }, 1500);
+    setTimeout(() => { setSpTiktok(""); setSpSaved(false); }, 1500);
   };
 
   const startInlineEdit = (s: DailySpending) => { setInlineEditId(s.id); setInlineGoogle(String(s.google || "")); setInlineMeta(String(s.meta || "")); setInlineTiktok(String(s.tiktok || "")); };
@@ -689,20 +698,21 @@ function PreenchimentoTab({ records, spending, onRecordsChange, onSpendingChange
     setInlineEditId(null);
   };
 
-  const handleEditRecord = (r: DailyRecord) => { setSelectedType(r.type); setSelectedDate(r.date); setFormData(Object.fromEntries(Object.entries(r.data).map(([k, v]) => [k, String(v)]))); setReservations(r.reservations); setEditingId(r.id); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const handleDeleteRecord = async (id: string) => { await apiDeleteRecord(id); onRecordsChange(records.filter((r) => r.id !== id)); };
   const handleDeleteSpending = async (id: string) => { await apiDeleteSpending(id); onSpendingChange(spending.filter((s) => s.id !== id)); };
 
-  const isNewbyte = selectedType === "relatorio-newbyte";
   const fieldStyle: React.CSSProperties = { width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #E8EEF8", fontSize: 13, background: "#fff", boxSizing: "border-box" };
   const labelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 600, color: "#7C7C7C", textTransform: "uppercase", display: "block", marginBottom: 4 };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       {/* 1. NewByte — importar por código */}
-      <NewbyteImportSection onSaved={async () => { const r = await apiGetRecords(); onRecordsChange(r); }} />
+      <NewbyteImportSection onSaved={reload} />
 
-      {/* 2. Gasto de mídia — só TikTok (compacto) */}
+      {/* 2. Com / Sem atendimento — por código (puxa Effective + Limpeza do Metabase) */}
+      <ManualPorCodigoSection onSaved={reload} />
+
+      {/* 3. Gasto de mídia — só TikTok (compacto) */}
       <div style={{ background: "#fff", border: "1px solid #E8EEF8", borderRadius: 12, padding: 20 }}>
         <p style={{ fontSize: 13, fontWeight: 700, color: "#00143D", marginBottom: 4 }}>Gasto de mídia — TikTok</p>
         <p style={{ fontSize: 12, color: "#7C7C7C", marginBottom: 12 }}>Google e Meta são sincronizados automaticamente via Nekt. Aqui você só preenche o <strong>TikTok</strong>.</p>
@@ -748,66 +758,6 @@ function PreenchimentoTab({ records, spending, onRecordsChange, onSpendingChange
         )}
       </div>
 
-      {/* 3. Registro manual — Com / Sem atendimento (por último) */}
-      <div style={{ background: "#fff", border: "1px solid #E8EEF8", borderRadius: 12, padding: 20 }}>
-        <p style={{ fontSize: 13, fontWeight: 700, color: "#00143D", marginBottom: 12 }}>Registro manual — Com / Sem atendimento</p>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {TYPE_OPTIONS.filter((t) => t.value !== "relatorio-newbyte").map((t) => (
-            <button key={t.value} onClick={() => { setSelectedType(t.value); resetForm(); }} style={{ padding: "10px 16px", borderRadius: 10, border: `1.5px solid ${selectedType === t.value ? "#0055FF" : "#E8EEF8"}`, background: selectedType === t.value ? "#0055FF12" : "#fff", color: selectedType === t.value ? "#0055FF" : "#00143D", fontWeight: selectedType === t.value ? 700 : 400, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-              <span>{t.emoji}</span> {t.label} <span style={{ fontSize: 11, color: "#7C7C7C", fontWeight: 400 }}>{t.desc}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {selectedType && (
-        <div style={{ background: "#fff", border: "1px solid #E8EEF8", borderRadius: 12, padding: 20 }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: "#00143D", marginBottom: 16 }}>{editingId ? "Editando registro" : "Novo registro"}</p>
-          <div style={{ marginBottom: 12 }}><label style={labelStyle}>Data</label><input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={fieldStyle} /></div>
-          {!isNewbyte && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-              <div><label style={labelStyle}>Reservas</label><input type="number" placeholder="0" value={formData.reservas || ""} onChange={(e) => setFormData((p) => ({ ...p, reservas: e.target.value }))} style={fieldStyle} /></div>
-              <div><label style={labelStyle}>Fat. Effective (R$)</label><input type="number" placeholder="0" value={formData.fatEffective || ""} onChange={(e) => setFormData((p) => ({ ...p, fatEffective: e.target.value }))} style={fieldStyle} /></div>
-              <div><label style={labelStyle}>Tx. Limpeza (R$)</label><input type="number" placeholder="0" value={formData.cleaningFee || ""} onChange={(e) => setFormData((p) => ({ ...p, cleaningFee: e.target.value }))} style={fieldStyle} /></div>
-              <div><label style={labelStyle}>Fat. Seazone (R$)</label><div style={{ display: "flex", gap: 6 }}><input type="number" placeholder="0" value={formData.fatSeazone || ""} onChange={(e) => setFormData((p) => ({ ...p, fatSeazone: e.target.value }))} style={{ ...fieldStyle, flex: 1 }} /><button onClick={calcFatSeazone} title="Calcular automaticamente" style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #E8EEF8", background: "#F0F3FA", fontSize: 12, cursor: "pointer" }}>⚡</button></div></div>
-            </div>
-          )}
-          {isNewbyte && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-              <div><label style={labelStyle}>Tickets</label><input type="number" placeholder="0" value={formData.tickets || ""} onChange={(e) => setFormData((p) => ({ ...p, tickets: e.target.value }))} style={fieldStyle} /></div>
-              <div><label style={labelStyle}>Reservas (conversões)</label><input type="number" placeholder="0" value={formData.conversoes || ""} onChange={(e) => setFormData((p) => ({ ...p, conversoes: e.target.value }))} style={fieldStyle} /></div>
-              <div><label style={labelStyle}>Fat. Effective (R$)</label><input type="number" placeholder="0" value={formData.fatEffective || ""} onChange={(e) => setFormData((p) => ({ ...p, fatEffective: e.target.value }))} style={fieldStyle} /></div>
-              <div><label style={labelStyle}>Fat. Seazone (R$)</label><input type="number" placeholder="0" value={formData.fatSeazone || ""} onChange={(e) => setFormData((p) => ({ ...p, fatSeazone: e.target.value }))} style={fieldStyle} /></div>
-              <div><label style={labelStyle}>Canal</label><select value={formData.canal || ""} onChange={(e) => setFormData((p) => ({ ...p, canal: e.target.value }))} style={fieldStyle}><option value="">Selecione</option><option value="meta">Meta Ads</option><option value="tiktok">TikTok</option></select></div>
-            </div>
-          )}
-          {!isNewbyte && (
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <label style={{ ...labelStyle, marginBottom: 0 }}>Detalhes de reservas</label>
-                <button onClick={() => setReservations((p) => [...p, emptyReservation()])} style={{ fontSize: 12, color: "#0055FF", background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>+ Adicionar reserva</button>
-              </div>
-              {reservations.map((res, i) => (
-                <div key={res.id} style={{ border: "1px solid #E8EEF8", borderRadius: 8, padding: 12, marginBottom: 8 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 12, fontWeight: 600, color: "#00143D" }}>Reserva {i + 1}{res.destination && ` — ${res.destination}`}</span><button onClick={() => setReservations((p) => p.filter((_, j) => j !== i))} style={{ fontSize: 12, color: "#FC6058", background: "none", border: "none", cursor: "pointer" }}>✕</button></div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <div><label style={labelStyle}>Fonte</label><select value={res.source} onChange={(e) => setReservations((p) => p.map((r, j) => j === i ? { ...r, source: e.target.value } : r))} style={fieldStyle}><option value="">—</option><option value="Google">Google</option><option value="Meta Ads">Meta Ads</option><option value="TikTok">TikTok</option></select></div>
-                    <div><label style={labelStyle}>Destino</label><input type="text" placeholder="Florianópolis" value={res.destination} onChange={(e) => setReservations((p) => p.map((r, j) => j === i ? { ...r, destination: e.target.value } : r))} style={fieldStyle} /></div>
-                    <div style={{ gridColumn: "1/-1" }}><label style={labelStyle}>UTMs</label><input type="text" placeholder="utm_source=google&utm_medium=cpc" value={res.utm} onChange={(e) => setReservations((p) => p.map((r, j) => j === i ? { ...r, utm: e.target.value } : r))} style={fieldStyle} /></div>
-                    <div><label style={labelStyle}>Cupom</label><input type="text" placeholder="PRAIA10" value={res.coupon} onChange={(e) => setReservations((p) => p.map((r, j) => j === i ? { ...r, coupon: e.target.value } : r))} style={fieldStyle} /></div>
-                    <div><label style={labelStyle}>Código da reserva</label><input type="text" placeholder="LW600J" value={res.reservationCode || ""} onChange={(e) => setReservations((p) => p.map((r, j) => j === i ? { ...r, reservationCode: e.target.value } : r))} style={fieldStyle} /></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleSave} disabled={saved} style={{ padding: "10px 20px", borderRadius: 8, border: "none", background: saved ? "#10B981" : "#0055FF", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{saved ? "✓ Salvo!" : editingId ? "Salvar edição" : "Salvar registro"}</button>
-            {editingId && <button onClick={resetForm} style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid #E8EEF8", background: "#fff", fontSize: 13, cursor: "pointer" }}>Cancelar</button>}
-          </div>
-        </div>
-      )}
-
       {records.filter((r) => r.date === todayStr()).length > 0 && (
         <div style={{ background: "#F0F3FA", borderRadius: 12, padding: 16 }}>
           <p style={{ fontSize: 12, fontWeight: 600, color: "#7C7C7C", marginBottom: 8 }}>Registros de hoje</p>
@@ -815,7 +765,6 @@ function PreenchimentoTab({ records, spending, onRecordsChange, onSpendingChange
             <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: "#fff", borderRadius: 8, marginBottom: 6, fontSize: 13 }}>
               <span>{TYPE_OPTIONS.find((t) => t.value === r.type)?.emoji} {TYPE_OPTIONS.find((t) => t.value === r.type)?.label}</span>
               <div style={{ display: "flex", gap: 4 }}>
-                <button onClick={() => handleEditRecord(r)} style={{ fontSize: 12, color: "#0055FF", background: "none", border: "none", cursor: "pointer" }}>✏ Editar</button>
                 <button onClick={() => handleDeleteRecord(r.id)} style={{ fontSize: 12, color: "#FC6058", background: "none", border: "none", cursor: "pointer" }}>✕</button>
               </div>
             </div>

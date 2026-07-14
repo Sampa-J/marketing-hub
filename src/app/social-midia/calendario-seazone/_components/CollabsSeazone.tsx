@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { Heart, MessageCircle, Loader2, ExternalLink, AlertTriangle, Users, EyeOff, RotateCcw } from "lucide-react"
 import { T } from "@/lib/constants"
 
-const COR = "#7C3AED"
+const COR = T.primary
 
 interface Collab {
   id: string
@@ -25,14 +25,14 @@ function dataFmt(iso: string) {
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })
 }
 
-export function CollabsVistas() {
+export function CollabsSeazone() {
   const [collabs, setCollabs] = useState<Collab[]>([])
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [mostrarOcultos, setMostrarOcultos] = useState(false)
 
   useEffect(() => {
-    fetch("/api/collabs-vistas", { cache: "no-store" })
+    fetch("/api/collabs-seazone", { cache: "no-store" })
       .then(r => r.json())
       .then(d => {
         if (d.error) setErro(d.error)
@@ -47,7 +47,7 @@ export function CollabsVistas() {
     // otimista
     setCollabs(prev => prev.map(c => c.id === id ? { ...c, hidden } : c))
     try {
-      await fetch("/api/collabs-vistas", {
+      await fetch("/api/collabs-seazone", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, hidden }),
@@ -79,10 +79,10 @@ export function CollabsVistas() {
   const visiveis = mostrarOcultos ? ocultos : collabs.filter(c => !c.hidden)
 
   return (
-    <>
+    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 14, padding: "16px 18px", boxShadow: T.elevSm }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, margin: "0 0 12px", flexWrap: "wrap" }}>
         <p style={{ fontSize: 11, color: T.mutedFg, margin: 0, flex: 1, minWidth: 200 }}>
-          Posts em que o Vistas foi marcado. Oculte as menções que não são collab — elas ficam salvas e somem da lista.
+          Posts em que a Seazone foi marcada. Oculte as menções que não são collab — elas ficam salvas e somem da lista.
         </p>
         {ocultos.length > 0 && (
           <button
@@ -142,6 +142,6 @@ export function CollabsVistas() {
           ))}
         </div>
       )}
-    </>
+    </div>
   )
 }

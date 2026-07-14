@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useMemo, useRef } from 'react';
-import { Trash2, ChevronUp, ChevronDown, Check, X } from 'lucide-react';
+import { Trash2, ChevronUp, ChevronDown, Check, X, Search, FolderOpen } from 'lucide-react';
 import { T } from '@/lib/constants';
 import { useContent } from '../_hooks/useContent';
 import { EDITORIALS, getEditorial } from '../_lib/calendar-constants';
 import { getStatusTag, getChannelTag } from './ContentCard';
-import type { EditorialSlug, ContentFormat } from '../_lib/types';
+import { FrentePicker, FrenteTags } from './FrenteControls';
+import type { EditorialSlug, ContentFormat, Frente } from '../_lib/types';
 
 const FORMAT_OPTIONS: { value: ContentFormat; label: string }[] = [
   { value: 'carrossel', label: 'Carrossel' },
@@ -21,6 +22,8 @@ export function BacklogView() {
   const { items, loading, updateItem, deleteItem } = useContent();
   const [filterEditorial, setFilterEditorial] = useState<EditorialSlug | ''>('');
   const [filterChannel, setFilterChannel] = useState<ChannelFilter>('');
+  const [filterFrentes, setFilterFrentes] = useState<Frente[]>([]);
+  const [search, setSearch] = useState('');
   const [approveId, setApproveId] = useState<string | null>(null);
   const [approveDate, setApproveDate] = useState('');
   const [editingField, setEditingField] = useState<string | null>(null);
@@ -40,8 +43,21 @@ export function BacklogView() {
         return true;
       });
     }
+    if (filterFrentes.length > 0) {
+      filtered = filtered.filter((item) => {
+        const fr = item.frentes ?? [];
+        return filterFrentes.some((f) => fr.includes(f));
+      });
+    }
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      filtered = filtered.filter((item) => {
+        const hay = [item.title, item.tema, item.notas, item.copy].filter(Boolean).join(' ').toLowerCase();
+        return hay.includes(q);
+      });
+    }
     return filtered;
-  }, [items, filterEditorial, filterChannel]);
+  }, [items, filterEditorial, filterChannel, filterFrentes, search]);
 
   const handleApprove = async () => {
     if (!approveId || !approveDate) return;
@@ -77,6 +93,30 @@ export function BacklogView() {
             <option value="instagram">Instagram</option>
             <option value="tiktok">TikTok</option>
           </select>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+          <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: T.cinza400 }} />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar posts (título, tema, notas, copy)..."
+            style={{ width: '100%', border: `1px solid ${T.border}`, borderRadius: 12, background: T.card, padding: '8px 12px 8px 34px', fontSize: 14, color: T.cinza700, outline: 'none', boxSizing: 'border-box' }}
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: T.cinza400, display: 'flex' }}
+            >
+              <X size={15} />
+            </button>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: T.mutedFg }}>Frente:</span>
+          <FrentePicker value={filterFrentes} onChange={setFilterFrentes} />
         </div>
       </div>
 
@@ -134,6 +174,18 @@ export function BacklogView() {
                         <span style={{ background: channelTag.bg, color: channelTag.fg, borderRadius: 6, padding: '2px 8px', fontSize: 12, fontWeight: 600 }}>
                           {channelTag.label}
                         </span>
+                      )}
+                      <FrenteTags frentes={item.frentes} />
+                      {item.drive_link && (
+                        <a
+                          href={item.drive_link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Abrir conteúdo no Drive"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: T.cinza50, color: T.primary, border: `1px solid ${T.border}`, borderRadius: 6, padding: '2px 8px', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}
+                        >
+                          <FolderOpen size={12} /> Drive
+                        </a>
                       )}
                     </div>
                     {editingField === `title-${item.id}` ? (

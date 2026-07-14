@@ -3,18 +3,17 @@
 import { useEffect, useState } from "react"
 import { T } from "@/lib/constants"
 
-const COR = "#7C3AED"
+const COR = T.primary
 
 export const NAV_SECTIONS = [
-  { id: "reservas", label: "Reservas" },
-  { id: "seguidores", label: "Seguidores" },
+  { id: "conteudo", label: "Conteúdo" },
   { id: "engajamento", label: "Engajamento" },
   { id: "collabs", label: "Collabs e Marcações" },
   { id: "influenciadores", label: "Influenciadores" },
-  { id: "conteudo", label: "Conteúdo" },
+  { id: "metricas", label: "Métricas" },
 ]
 
-export function SectionNavVistas() {
+export function SectionNavSeazone() {
   const [active, setActive] = useState<string>(NAV_SECTIONS[0].id)
 
   useEffect(() => {

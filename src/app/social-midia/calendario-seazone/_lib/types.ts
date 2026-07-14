@@ -16,6 +16,12 @@ export type ContentStatus = 'ideia' | 'aprovado' | 'producao' | 'rascunho' | 'gr
 
 export type Channel = 'instagram_feed' | 'instagram_reels' | 'instagram_stories' | 'linkedin' | 'tiktok';
 
+export type Frente = 'SZI' | 'SZS' | 'MKTPLACE' | 'FRANQUIAS';
+
+export type Publico = 'HOSPEDES' | 'PROPRIETARIOS' | 'INVESTIDORES' | 'FRANQUEADOS';
+
+export type Collab = 'MONICA' | 'VISTAS' | 'OUTROS';
+
 export interface Editorial {
   slug: EditorialSlug;
   name: string;
@@ -37,6 +43,22 @@ export interface Post {
   estrutura: string | null;
   copy: string | null;
   notas: string | null;
+  frentes?: Frente[] | null;
+  publicos?: Publico[] | null;
+  collabs?: Collab[] | null;
+  drive_link?: string | null;
+  cta_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Cta {
+  id: string;
+  titulo: string;
+  texto: string;
+  descricao: string | null;
+  frentes: Frente[] | null;
+  link: string | null;
   created_at: string;
   updated_at: string;
 }

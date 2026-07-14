@@ -1,5 +1,37 @@
-import type { Editorial, EditorialSlug, ContentFormat, ContentStatus, Channel } from './types';
+import type { Editorial, EditorialSlug, ContentFormat, ContentStatus, Channel, Frente, Publico, Collab } from './types';
 import { T } from '@/lib/constants';
+
+export const FRENTES: { value: Frente; label: string; color: string }[] = [
+  { value: 'SZI', label: 'SZI', color: T.statusOkFg },
+  { value: 'SZS', label: 'SZS', color: T.primary },
+  { value: 'MKTPLACE', label: 'MKTPLACE', color: T.laranja500 },
+  { value: 'FRANQUIAS', label: 'FRANQUIAS', color: T.roxo600 },
+];
+
+export function getFrente(value: string): { value: Frente; label: string; color: string } | undefined {
+  return FRENTES.find((f) => f.value === value);
+}
+
+export const PUBLICOS: { value: Publico; label: string; color: string }[] = [
+  { value: 'HOSPEDES', label: 'Hóspedes', color: T.teal600 },
+  { value: 'PROPRIETARIOS', label: 'Proprietários', color: T.indigo600 },
+  { value: 'INVESTIDORES', label: 'Investidores', color: T.statusWarnFg },
+  { value: 'FRANQUEADOS', label: 'Franqueados', color: T.destructive },
+];
+
+export function getPublico(value: string): { value: Publico; label: string; color: string } | undefined {
+  return PUBLICOS.find((p) => p.value === value);
+}
+
+export const COLLABS: { value: Collab; label: string; color: string }[] = [
+  { value: 'MONICA', label: 'Collab Mônica', color: T.verde600 },
+  { value: 'VISTAS', label: 'Vistas', color: T.roxo600 },
+  { value: 'OUTROS', label: 'Outros', color: T.cinza600 },
+];
+
+export function getCollab(value: string): { value: Collab; label: string; color: string } | undefined {
+  return COLLABS.find((c) => c.value === value);
+}
 
 export const EDITORIALS: Editorial[] = [
   {

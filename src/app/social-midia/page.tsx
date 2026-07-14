@@ -17,44 +17,10 @@ export default function Page() {
           boxShadow: T.elevSm,
         }}>
           <p style={{ fontSize: 14, fontWeight: 700, color: T.cardFg, margin: "0 0 4px" }}>
-            Calendário
+            Seazone
           </p>
           <p style={{ fontSize: 12, color: T.mutedFg, margin: 0 }}>
-            Planejamento e geração de conteúdo para redes sociais com IA.
-          </p>
-        </Link>
-
-        <Link href="/social-midia/seguidores-seazone" style={{
-          background: T.card,
-          border: `1px solid ${T.border}`,
-          borderRadius: 12,
-          padding: "20px 24px",
-          textDecoration: "none",
-          display: "block",
-          boxShadow: T.elevSm,
-        }}>
-          <p style={{ fontSize: 14, fontWeight: 700, color: T.cardFg, margin: "0 0 4px" }}>
-            Seazone — Métricas
-          </p>
-          <p style={{ fontSize: 12, color: T.mutedFg, margin: 0 }}>
-            Seguidores, ganho diário e métricas do @destinoseazone via Reportei.
-          </p>
-        </Link>
-
-        <Link href="/social-midia/influencers" style={{
-          background: T.card,
-          border: `1px solid ${T.border}`,
-          borderRadius: 12,
-          padding: "20px 24px",
-          textDecoration: "none",
-          display: "block",
-          boxShadow: T.elevSm,
-        }}>
-          <p style={{ fontSize: 14, fontWeight: 700, color: T.cardFg, margin: "0 0 4px" }}>
-            Controle de Influencers
-          </p>
-          <p style={{ fontSize: 12, color: T.mutedFg, margin: 0 }}>
-            Gestão de influencers por campanha · Expansão SP · Salvador · Vistas · Seazone.
+            Métricas (IG + YouTube) · Engajamento · Collabs · Influenciadores · Calendário de conteúdo com IA, frentes, CTAs e Drive.
           </p>
         </Link>
 
@@ -92,65 +58,22 @@ export default function Page() {
           </p>
         </Link>
 
-        <a href="https://linha-editorial-monica.lovable.app/"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            background: T.card,
-            border: `1px solid ${T.border}`,
-            borderRadius: 12,
-            padding: "20px 24px",
-            textDecoration: "none",
-            display: "block",
-            boxShadow: T.elevSm,
-          }}>
+        <Link href="/social-midia/linhas-editoriais" style={{
+          background: T.card,
+          border: `1px solid ${T.border}`,
+          borderRadius: 12,
+          padding: "20px 24px",
+          textDecoration: "none",
+          display: "block",
+          boxShadow: T.elevSm,
+        }}>
           <p style={{ fontSize: 14, fontWeight: 700, color: T.cardFg, margin: "0 0 4px" }}>
-            Linha Editorial — Mônica Medeiros
+            Linhas Editoriais
           </p>
           <p style={{ fontSize: 12, color: T.mutedFg, margin: 0 }}>
-            Linha editorial da Mônica Medeiros.
+            Mônica Medeiros · Pedro (Escola de Imóveis) · Rodrigo Ruas.
           </p>
-        </a>
-
-        <a href="https://linha-editorial-pedro-escola-de-imoveis.lovable.app"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            background: T.card,
-            border: `1px solid ${T.border}`,
-            borderRadius: 12,
-            padding: "20px 24px",
-            textDecoration: "none",
-            display: "block",
-            boxShadow: T.elevSm,
-          }}>
-          <p style={{ fontSize: 14, fontWeight: 700, color: T.cardFg, margin: "0 0 4px" }}>
-            Linha Editorial — Pedro (Escola de Imóveis)
-          </p>
-          <p style={{ fontSize: 12, color: T.mutedFg, margin: 0 }}>
-            Investimento imobiliário e short stay. 4 pilares · Reels + Carrossel · 3 meses.
-          </p>
-        </a>
-
-        <a href="https://linha-editorial-rodrigo-ruas-seazone.lovable.app"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            background: T.card,
-            border: `1px solid ${T.border}`,
-            borderRadius: 12,
-            padding: "20px 24px",
-            textDecoration: "none",
-            display: "block",
-            boxShadow: T.elevSm,
-          }}>
-          <p style={{ fontSize: 14, fontWeight: 700, color: T.cardFg, margin: "0 0 4px" }}>
-            Linha Editorial — Rodrigo Ruas
-          </p>
-          <p style={{ fontSize: 12, color: T.mutedFg, margin: 0 }}>
-            Gestão de imóveis para aluguel por temporada. 4 pilares · 1 Reels/semana · 3 meses.
-          </p>
-        </a>
+        </Link>
 
       </div>
     </TeamLayout>

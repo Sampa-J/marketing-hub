@@ -458,8 +458,8 @@ const INFLU_COLS: { key: keyof InfluRow; label: string; width: number; type?: st
   { key: 'seguidores', label: 'Seguidores', width: 85 },
   { key: 'contato', label: 'Contato', width: 140 },
   { key: 'status', label: 'Status', width: 130 },
-  { key: 'valor_trabalho', label: 'Vlr Trabalho', width: 95 },
-  { key: 'valor_hospedagem', label: 'Vlr Hosp.', width: 85 },
+  { key: 'valor_trabalho', label: 'Vlr Trabalho', width: 95, type: 'money' },
+  { key: 'valor_hospedagem', label: 'Vlr Hosp.', width: 85, type: 'money' },
   { key: 'data_visita', label: 'Data Visita', width: 105 },
   { key: 'cupom', label: 'Cupom', width: 85 },
   { key: 'validade_cupom', label: 'Val. Cupom', width: 95 },
@@ -487,8 +487,16 @@ function statusStyle(s: string): React.CSSProperties {
 
 function parseValor(v: string): number {
   if (!v) return 0
-  const n = parseFloat(v.replace(/[^\d,.-]/g, '').replace(',', '.'))
+  // formato BR: pontos são separador de milhar, vírgula é decimal
+  const n = parseFloat(String(v).replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.'))
   return isNaN(n) ? 0 : n
+}
+/* Normaliza valor de moeda: se tiver dígitos, formata como R$ X.XXX,XX;
+   caso contrário (ex: "permuta", "aguardando") ou vazio, mantém o texto */
+function normalizeMoneyV(val: string): string {
+  const s = (val ?? '').trim()
+  if (!s || !/\d/.test(s)) return s
+  return 'R$ ' + parseValor(s).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 function ColFilterPopup({ colKey, label, allRows, active, onApply, onClose }: {
@@ -641,9 +649,10 @@ function InfluenciadoresSection() {
   const fmtBRL = (n: number) => n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   async function commitEdit(id: string, key: keyof InfluRow, val: string) {
+    const finalVal = (key === 'valor_trabalho' || key === 'valor_hospedagem') ? normalizeMoneyV(val) : val
     setSaving(true)
-    await fetch('/api/vistas-influenciadores', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, [key]: val }) })
-    setRows(prev => prev.map(r => r.id === id ? { ...r, [key]: val } : r))
+    await fetch('/api/vistas-influenciadores', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, [key]: finalVal }) })
+    setRows(prev => prev.map(r => r.id === id ? { ...r, [key]: finalVal } : r))
     setEditCell(null); setSaving(false)
   }
 
@@ -956,6 +965,18 @@ function InfluenciadoresSection() {
                               </a>
                             ))}
                           </div>
+                        </td>
+                      )
+                    }
+
+                    if (col.type === 'money') {
+                      const numeric = /\d/.test(val)
+                      return (
+                        <td key={col.key} style={{ ...cellBase, background: bg, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }} title={val}
+                          onDoubleClick={e => { e.stopPropagation(); setEditCell({ id: row.id, key: col.key }); setEditVal(val) }}>
+                          {val
+                            ? <span style={{ fontWeight: numeric ? 600 : 400, color: numeric ? GS.text : GS.textMuted }}>{normalizeMoneyV(val)}</span>
+                            : <span style={{ color: '#d1d5db', fontSize: 12 }}>—</span>}
                         </td>
                       )
                     }
@@ -1941,7 +1962,7 @@ export default function VistasHospedesPage() {
         <section id="collabs" style={{ marginBottom: 28, scrollMarginTop: 110 }}>
           <div style={{ marginBottom: 14 }}>
             <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.mutedFg, margin: "0 0 2px" }}>Instagram</p>
-            <h2 style={{ fontSize: 18, fontWeight: 800, color: T.cardFg, margin: 0 }}>Collabs</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 800, color: T.cardFg, margin: 0 }}>Collabs e Marcações</h2>
           </div>
           <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "18px 20px", boxShadow: T.elevSm }}><CollabsVistas /></div>
         </section>

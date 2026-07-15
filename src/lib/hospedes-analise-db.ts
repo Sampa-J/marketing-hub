@@ -54,6 +54,41 @@ export const DEFAULT_FORMULA_CONFIG: FormulaConfig = {
 const RECORDS_KEY = "hospedes-analise:records";
 const SPENDING_KEY = "hospedes-analise:spending";
 const FORMULA_CONFIG_KEY = "hospedes-analise:formula-config";
+const BACKUPS_KEY = "hospedes-analise:records-backups";
+const MAX_BACKUPS = 10;
+
+export interface RecordsBackup {
+  ts: string; // ISO
+  count: number;
+  motivo: string; // ex: "revalidate", "manual"
+  records: DailyRecord[];
+}
+
+// Salva um snapshot dos registros no próprio Redis (rollback confiável, ao contrário
+// do backup em arquivo que se perde no filesystem efêmero da Vercel). Mantém os últimos MAX_BACKUPS.
+export async function saveRecordsBackup(records: DailyRecord[], motivo: string): Promise<string> {
+  const ts = new Date().toISOString();
+  const backups = (await redis.get<RecordsBackup[]>(BACKUPS_KEY)) ?? [];
+  backups.unshift({ ts, count: records.length, motivo, records });
+  await redis.set(BACKUPS_KEY, backups.slice(0, MAX_BACKUPS));
+  return ts;
+}
+
+// Lista os backups sem trazer os registros inteiros (leve, para a UI).
+export async function listRecordsBackups(): Promise<Array<Omit<RecordsBackup, "records">>> {
+  const backups = (await redis.get<RecordsBackup[]>(BACKUPS_KEY)) ?? [];
+  return backups.map(({ ts, count, motivo }) => ({ ts, count, motivo }));
+}
+
+// Restaura um backup (o mais recente por padrão, ou o de um ts específico).
+// Retorna a quantidade de registros restaurados, ou null se não houver backup.
+export async function restoreRecordsBackup(ts?: string): Promise<number | null> {
+  const backups = (await redis.get<RecordsBackup[]>(BACKUPS_KEY)) ?? [];
+  const target = ts ? backups.find((b) => b.ts === ts) : backups[0];
+  if (!target) return null;
+  await redis.set(RECORDS_KEY, target.records);
+  return target.records.length;
+}
 
 export async function getRecords(): Promise<DailyRecord[]> {
   return (await redis.get<DailyRecord[]>(RECORDS_KEY)) ?? [];

@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, type DragEvent } from 'react';
-import { Copy } from 'lucide-react';
+import { Copy, FolderOpen } from 'lucide-react';
 import { T } from '@/lib/constants';
 import { getEditorial } from '../_lib/calendar-constants';
+import { FrenteTags, PublicoTags, CollabTags } from './FrenteControls';
 import type { Post, ContentStatus, ContentFormat } from '../_lib/types';
 
 const STATUS_OPTIONS: { value: ContentStatus; label: string; bg: string; fg: string }[] = [
@@ -83,6 +84,7 @@ export function ContentCard({ item, compact, onClick, draggable, onStatusChange,
         transition: 'box-shadow 0.15s',
         overflow: 'hidden',
         minWidth: 0,
+        flexShrink: 0,
         position: 'relative',
       }}
     >
@@ -133,6 +135,21 @@ export function ContentCard({ item, compact, onClick, draggable, onStatusChange,
           <span style={{ background: channelTag.bg, color: channelTag.fg, borderRadius: 6, padding: '1px 5px', fontSize: 10, fontWeight: 600, flexShrink: 0 }}>
             {channelTag.label}
           </span>
+        )}
+        <FrenteTags frentes={item.frentes} compact />
+        <PublicoTags publicos={item.publicos} compact />
+        <CollabTags collabs={item.collabs} compact />
+        {item.drive_link && (
+          <a
+            href={item.drive_link}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            title="Abrir conteúdo no Drive"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: T.cinza50, color: T.primary, border: `1px solid ${T.border}`, borderRadius: 6, padding: '1px 5px', fontSize: 10, fontWeight: 600, flexShrink: 0, textDecoration: 'none' }}
+          >
+            <FolderOpen size={10} /> Drive
+          </a>
         )}
       </div>
 

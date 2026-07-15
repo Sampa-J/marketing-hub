@@ -4,7 +4,9 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 import { T } from '@/lib/constants';
 import { EDITORIALS, STATUSES } from '../_lib/calendar-constants';
-import type { Post, EditorialSlug, ContentFormat, ContentStatus } from '../_lib/types';
+import { FrentePicker, PublicoPicker, CollabPicker } from './FrenteControls';
+import { CtaPicker } from './CtaPicker';
+import type { Post, EditorialSlug, ContentFormat, ContentStatus, Frente, Publico, Collab } from '../_lib/types';
 
 const FORMAT_OPTIONS: { value: ContentFormat; label: string }[] = [
   { value: 'carrossel', label: 'Carrossel' },
@@ -31,6 +33,11 @@ export function QuickCreateModal({ date, onClose, onCreate }: QuickCreateModalPr
   const [canal, setCanal] = useState('instagram');
   const [status, setStatus] = useState<ContentStatus>('ideia');
   const [notas, setNotas] = useState('');
+  const [frentes, setFrentes] = useState<Frente[]>([]);
+  const [publicos, setPublicos] = useState<Publico[]>([]);
+  const [collabs, setCollabs] = useState<Collab[]>([]);
+  const [driveLink, setDriveLink] = useState('');
+  const [ctaId, setCtaId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -56,6 +63,11 @@ export function QuickCreateModal({ date, onClose, onCreate }: QuickCreateModalPr
           estrutura: null,
           copy: null,
           notas: notas.trim() || null,
+          frentes: frentes.length ? frentes : null,
+          publicos: publicos.length ? publicos : null,
+          collabs: collabs.length ? collabs : null,
+          drive_link: driveLink.trim() || null,
+          cta_id: ctaId,
         });
       }
       onClose();
@@ -93,7 +105,7 @@ export function QuickCreateModal({ date, onClose, onCreate }: QuickCreateModalPr
       onClick={onClose}
     >
       <div
-        style={{ width: '100%', maxWidth: 480, background: T.card, borderRadius: 14, padding: 24, boxShadow: T.elevMd }}
+        style={{ width: '100%', maxWidth: 480, background: T.card, borderRadius: 14, padding: 24, boxShadow: T.elevMd, maxHeight: '92vh', overflowY: 'auto' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -180,7 +192,7 @@ export function QuickCreateModal({ date, onClose, onCreate }: QuickCreateModalPr
         </div>
 
         {/* Notas */}
-        <div style={{ marginBottom: 20 }}>
+        <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>Notas (opcional)</label>
           <textarea
             value={notas}
@@ -191,6 +203,43 @@ export function QuickCreateModal({ date, onClose, onCreate }: QuickCreateModalPr
             onBlur={(e) => (e.currentTarget.style.borderColor = T.border)}
             style={{ ...inputBase, resize: 'vertical', lineHeight: 1.5 }}
           />
+        </div>
+
+        {/* Frente */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Frente</label>
+          <FrentePicker value={frentes} onChange={setFrentes} />
+        </div>
+
+        {/* Público */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Público</label>
+          <PublicoPicker value={publicos} onChange={setPublicos} />
+        </div>
+
+        {/* Collab */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Collab</label>
+          <CollabPicker value={collabs} onChange={setCollabs} />
+        </div>
+
+        {/* Link do Drive */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Link do Drive (opcional)</label>
+          <input
+            value={driveLink}
+            onChange={(e) => setDriveLink(e.target.value)}
+            placeholder="https://drive.google.com/..."
+            onFocus={(e) => (e.currentTarget.style.borderColor = T.primary)}
+            onBlur={(e) => (e.currentTarget.style.borderColor = T.border)}
+            style={inputBase}
+          />
+        </div>
+
+        {/* CTA */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={labelStyle}>CTA (ManyChat)</label>
+          <CtaPicker value={ctaId} onChange={setCtaId} />
         </div>
 
         {error && (

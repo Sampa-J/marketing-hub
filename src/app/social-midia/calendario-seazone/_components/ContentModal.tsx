@@ -5,7 +5,9 @@ import { X, CheckCircle, Sparkles, Copy, ChevronDown, ChevronUp } from 'lucide-r
 import { T } from '@/lib/constants';
 import { getEditorial, STATUSES } from '../_lib/calendar-constants';
 import { getStatusTag } from './ContentCard';
-import type { Post, ContentStatus, ContentFormat } from '../_lib/types';
+import { FrentePicker, PublicoPicker, CollabPicker } from './FrenteControls';
+import { CtaPicker } from './CtaPicker';
+import type { Post, ContentStatus, ContentFormat, Frente, Publico, Collab } from '../_lib/types';
 
 const FORMAT_OPTIONS: { value: ContentFormat; label: string }[] = [
   { value: 'carrossel', label: 'Carrossel' },
@@ -30,7 +32,13 @@ export function ContentModal({ item, onClose, onUpdate, onDelete }: ContentModal
   const [status, setStatus] = useState<ContentStatus>(item.status);
   const [formato, setFormato] = useState<ContentFormat>(item.formato);
   const [scheduledDate, setScheduledDate] = useState(item.scheduled_at ?? '');
+  const [frentes, setFrentes] = useState<Frente[]>(item.frentes ?? []);
+  const [publicos, setPublicos] = useState<Publico[]>(item.publicos ?? []);
+  const [collabs, setCollabs] = useState<Collab[]>(item.collabs ?? []);
+  const [driveLink, setDriveLink] = useState(item.drive_link ?? '');
+  const [ctaId, setCtaId] = useState<string | null>(item.cta_id ?? null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const [copyPanelOpen, setCopyPanelOpen] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
@@ -88,6 +96,7 @@ Escreva a copy ideal para esse post.`;
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveError('');
     try {
       await onUpdate(item.id, {
         title,
@@ -97,8 +106,20 @@ Escreva a copy ideal para esse post.`;
         status,
         formato,
         scheduled_at: scheduledDate || null,
+        frentes: frentes.length ? frentes : null,
+        publicos: publicos.length ? publicos : null,
+        collabs: collabs.length ? collabs : null,
+        drive_link: driveLink || null,
+        cta_id: ctaId,
       });
       onClose();
+    } catch (err: any) {
+      const msg = err?.message ?? 'Erro ao salvar.';
+      setSaveError(
+        /column .* does not exist/i.test(msg)
+          ? 'Não foi possível salvar: o banco ainda não tem as colunas novas (frentes/drive/CTA). Falta a migração do admin.'
+          : msg
+      );
     } finally {
       setSaving(false);
     }
@@ -196,6 +217,38 @@ Escreva a copy ideal para esse post.`;
             onBlur={(e) => (e.currentTarget.style.borderColor = T.border)}
             style={{ ...inputBase, resize: 'vertical', lineHeight: 1.5 }}
           />
+        </div>
+
+        <div style={{ background: T.cinza50, borderRadius: 8, padding: 12, marginBottom: 12 }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: T.mutedFg, textTransform: 'uppercase', margin: '0 0 6px', letterSpacing: '0.05em' }}>Frente</p>
+          <FrentePicker value={frentes} onChange={setFrentes} />
+        </div>
+
+        <div style={{ background: T.cinza50, borderRadius: 8, padding: 12, marginBottom: 12 }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: T.mutedFg, textTransform: 'uppercase', margin: '0 0 6px', letterSpacing: '0.05em' }}>Público</p>
+          <PublicoPicker value={publicos} onChange={setPublicos} />
+        </div>
+
+        <div style={{ background: T.cinza50, borderRadius: 8, padding: 12, marginBottom: 12 }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: T.mutedFg, textTransform: 'uppercase', margin: '0 0 6px', letterSpacing: '0.05em' }}>Collab</p>
+          <CollabPicker value={collabs} onChange={setCollabs} />
+        </div>
+
+        <div style={{ background: T.cinza50, borderRadius: 8, padding: 12, marginBottom: 12 }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: T.mutedFg, textTransform: 'uppercase', margin: '0 0 6px', letterSpacing: '0.05em' }}>Link do Drive (conteúdo)</p>
+          <input
+            value={driveLink}
+            onChange={(e) => setDriveLink(e.target.value)}
+            placeholder="https://drive.google.com/..."
+            onFocus={(e) => (e.currentTarget.style.borderColor = T.primary)}
+            onBlur={(e) => (e.currentTarget.style.borderColor = T.border)}
+            style={inputBase}
+          />
+        </div>
+
+        <div style={{ background: T.cinza50, borderRadius: 8, padding: 12, marginBottom: 12 }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: T.mutedFg, textTransform: 'uppercase', margin: '0 0 6px', letterSpacing: '0.05em' }}>CTA (ManyChat)</p>
+          <CtaPicker value={ctaId} onChange={setCtaId} />
         </div>
 
         {copy && (
@@ -335,6 +388,12 @@ Escreva a copy ideal para esse post.`;
             />
           </div>
         </div>
+
+        {saveError && (
+          <div style={{ background: T.statusErrBg, borderRadius: 8, padding: '10px 14px', fontSize: 13, color: T.destructive, marginBottom: 12 }}>
+            {saveError}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 12 }}>
           {item.status === 'agendado' && (

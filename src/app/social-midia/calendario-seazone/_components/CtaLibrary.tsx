@@ -10,13 +10,12 @@ import type { Cta, Frente } from '../_lib/types';
 interface FormState {
   id: string | null;
   titulo: string;
-  texto: string;
   descricao: string;
   frentes: Frente[];
   link: string;
 }
 
-const EMPTY: FormState = { id: null, titulo: '', texto: '', descricao: '', frentes: [], link: '' };
+const EMPTY: FormState = { id: null, titulo: '', descricao: '', frentes: [], link: '' };
 
 export function CtaLibrary() {
   const { ctas, loading, createCta, updateCta, deleteCta } = useCtas();
@@ -24,6 +23,7 @@ export function CtaLibrary() {
   const [filterFrentes, setFilterFrentes] = useState<Frente[]>([]);
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
@@ -34,7 +34,7 @@ export function CtaLibrary() {
       }
       if (search.trim()) {
         const q = search.trim().toLowerCase();
-        const hay = [c.titulo, c.texto, c.descricao].filter(Boolean).join(' ').toLowerCase();
+        const hay = [c.titulo, c.descricao].filter(Boolean).join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -42,25 +42,28 @@ export function CtaLibrary() {
   }, [ctas, filterFrentes, search]);
 
   async function copyTexto(c: Cta) {
+    const toCopy = c.link || c.descricao || c.titulo;
+    if (!toCopy) return;
     try {
-      await navigator.clipboard.writeText(c.texto);
+      await navigator.clipboard.writeText(toCopy);
       setCopiedId(c.id);
       setTimeout(() => setCopiedId(null), 1500);
     } catch {}
   }
 
-  function openNew() { setForm({ ...EMPTY }); }
+  function openNew() { setSaveError(null); setForm({ ...EMPTY }); }
   function openEdit(c: Cta) {
-    setForm({ id: c.id, titulo: c.titulo, texto: c.texto, descricao: c.descricao ?? '', frentes: c.frentes ?? [], link: c.link ?? '' });
+    setSaveError(null);
+    setForm({ id: c.id, titulo: c.titulo, descricao: c.descricao ?? '', frentes: c.frentes ?? [], link: c.link ?? '' });
   }
 
   async function handleSave() {
-    if (!form || !form.titulo.trim() || !form.texto.trim()) return;
+    if (!form || !form.titulo.trim()) return;
     setSaving(true);
+    setSaveError(null);
     try {
       const payload = {
         titulo: form.titulo.trim(),
-        texto: form.texto.trim(),
         descricao: form.descricao.trim() || null,
         frentes: form.frentes.length ? form.frentes : null,
         link: form.link.trim() || null,
@@ -68,6 +71,16 @@ export function CtaLibrary() {
       if (form.id) await updateCta(form.id, payload);
       else await createCta(payload);
       setForm(null);
+    } catch (err) {
+      console.error('Erro ao salvar CTA:', err);
+      const e = (err ?? {}) as { message?: string; details?: string; hint?: string; code?: string };
+      const code = e.code ?? '';
+      const msg = err instanceof Error ? err.message : (e.message || e.details || e.hint || (code ? `código ${code}` : 'erro desconhecido'));
+      setSaveError(
+        /row-level security/i.test(msg) || code === '42501'
+          ? 'Sem permissão pra gravar na tabela de CTAs (RLS do Supabase). Rode a policy de escrita: SQL Editor do Supabase → sql/2026-07-15_ctas_rls_fix.sql.'
+          : `Não foi possível salvar: ${msg}${code ? ` (código ${code})` : ''}`,
+      );
     } finally {
       setSaving(false);
     }
@@ -135,8 +148,7 @@ export function CtaLibrary() {
                 </div>
               </div>
               <FrenteTags frentes={c.frentes} />
-              <p style={{ margin: 0, fontSize: 12, color: T.cardFg, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{c.texto}</p>
-              {c.descricao && <p style={{ margin: 0, fontSize: 11, color: T.mutedFg, fontStyle: 'italic' }}>{c.descricao}</p>}
+              {c.descricao && <p style={{ margin: 0, fontSize: 12, color: T.cardFg, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{c.descricao}</p>}
               {c.link && (
                 <a href={c.link} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: T.primary, wordBreak: 'break-all' }}>
                   <ExternalLink size={11} /> {c.link}
@@ -159,15 +171,11 @@ export function CtaLibrary() {
             </div>
 
             <div style={{ marginBottom: 14 }}>
-              <label style={labelStyle}>Título *</label>
+              <label style={labelStyle}>Nome *</label>
               <input autoFocus value={form.titulo} onChange={(e) => setForm({ ...form, titulo: e.target.value })} placeholder="Ex: CTA reserva direta" style={inputBase} />
             </div>
             <div style={{ marginBottom: 14 }}>
-              <label style={labelStyle}>Texto do CTA *</label>
-              <textarea value={form.texto} onChange={(e) => setForm({ ...form, texto: e.target.value })} rows={4} placeholder="Texto que será usado no material..." style={{ ...inputBase, resize: 'vertical', lineHeight: 1.5 }} />
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={labelStyle}>Descrição / uso (opcional)</label>
+              <label style={labelStyle}>Descrição (opcional)</label>
               <input value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} placeholder="Quando usar este CTA..." style={inputBase} />
             </div>
             <div style={{ marginBottom: 14 }}>
@@ -179,12 +187,18 @@ export function CtaLibrary() {
               <input value={form.link} onChange={(e) => setForm({ ...form, link: e.target.value })} placeholder="https://..." style={inputBase} />
             </div>
 
+            {saveError && (
+              <div role="alert" style={{ background: T.statusErrBg, color: T.statusErrFg, border: `1px solid ${T.statusErr}`, borderRadius: 8, padding: '10px 12px', fontSize: 13, marginBottom: 14, lineHeight: 1.45 }}>
+                {saveError}
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => setForm(null)} style={{ flex: 1, background: 'none', border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', color: T.mutedFg }}>Cancelar</button>
               <button
                 onClick={handleSave}
-                disabled={saving || !form.titulo.trim() || !form.texto.trim()}
-                style={{ flex: 2, background: T.primary, color: T.primaryFg, border: 'none', borderRadius: 12, padding: '10px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', opacity: saving || !form.titulo.trim() || !form.texto.trim() ? 0.5 : 1 }}
+                disabled={saving || !form.titulo.trim()}
+                style={{ flex: 2, background: T.primary, color: T.primaryFg, border: 'none', borderRadius: 12, padding: '10px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', opacity: saving || !form.titulo.trim() ? 0.5 : 1 }}
               >
                 {saving ? 'Salvando...' : 'Salvar CTA'}
               </button>

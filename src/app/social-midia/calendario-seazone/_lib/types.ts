@@ -55,7 +55,7 @@ export interface Post {
 export interface Cta {
   id: string;
   titulo: string;
-  texto: string;
+  texto?: string | null; // campo legado, aposentado do formulário
   descricao: string | null;
   frentes: Frente[] | null;
   link: string | null;

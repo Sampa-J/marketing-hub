@@ -15,8 +15,10 @@ export function CtaPicker({ value, onChange }: { value: string | null; onChange:
 
   async function copyTexto() {
     if (!selected) return;
+    const toCopy = selected.link || selected.descricao || selected.titulo;
+    if (!toCopy) return;
     try {
-      await navigator.clipboard.writeText(selected.texto);
+      await navigator.clipboard.writeText(toCopy);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {}
@@ -50,7 +52,7 @@ export function CtaPicker({ value, onChange }: { value: string | null; onChange:
               {copied ? 'Copiado' : 'Copiar'}
             </button>
           </div>
-          <p style={{ margin: 0, fontSize: 12, color: T.cardFg, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{selected.texto}</p>
+          {selected.descricao && <p style={{ margin: 0, fontSize: 12, color: T.cardFg, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{selected.descricao}</p>}
           {selected.link && (
             <a href={selected.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: T.primary, wordBreak: 'break-all' }}>
               {selected.link}

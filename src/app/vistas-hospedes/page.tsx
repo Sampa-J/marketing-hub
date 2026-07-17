@@ -39,8 +39,9 @@ function TextWithLinks({ text, style }: { text: string; style?: React.CSSPropert
   )
 }
 
-const TOTAL_LINE = "#f59e0b" // laranja — média móvel total
-const WEB_LINE = "#06b6d4"   // ciano — média móvel website
+const TOTAL_LINE = "#f59e0b"  // laranja — média móvel total
+const NONOTA_LINE = "#8b5cf6" // violeta — média móvel Não-OTA
+const WEB_LINE = "#06b6d4"    // ciano — média móvel website
 
 const finite = (n: number, fallback = 0) => (Number.isFinite(n) ? n : fallback)
 
@@ -55,6 +56,7 @@ function ReservasChart({ days }: { days: DayData[] }) {
   const metaY = ys(META_DIA)
   const barW = Math.max(2, (cW / Math.max(days.length, 1)) - 2)
   const totalPath = days.map((d, i) => `${i === 0 ? "M" : "L"} ${xs(i)} ${ys(finite(d.movingAvg))}`).join(" ")
+  const nonotaPath = days.map((d, i) => `${i === 0 ? "M" : "L"} ${xs(i)} ${ys(finite(d.movingAvgNonota))}`).join(" ")
   const webPath = days.map((d, i) => `${i === 0 ? "M" : "L"} ${xs(i)} ${ys(finite(d.movingAvgWebsite))}`).join(" ")
   return (
     <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block", overflow: "visible" }}>
@@ -88,6 +90,7 @@ function ReservasChart({ days }: { days: DayData[] }) {
       <line x1={PL} x2={W - PR} y1={metaY} y2={metaY} stroke="#10b981" strokeWidth={1.5} strokeDasharray="4 3" />
       <text x={W - PR + 3} y={metaY + 4} fontSize={9} fill="#10b981" fontWeight={700}>7</text>
       <path d={totalPath} fill="none" stroke={TOTAL_LINE} strokeWidth={2} strokeLinejoin="round" />
+      <path d={nonotaPath} fill="none" stroke={NONOTA_LINE} strokeWidth={2} strokeLinejoin="round" />
       <path d={webPath} fill="none" stroke={WEB_LINE} strokeWidth={2} strokeLinejoin="round" />
       {[0, 7, 14, 21, 29].map(i => (
         <text key={i} x={xs(i)} y={H - 4} fontSize={8} fill={T.mutedFg ?? "#888"} textAnchor="middle">{fmtDate(days[i]?.date ?? "")}</text>
@@ -1833,6 +1836,8 @@ export default function VistasHospedesPage() {
   const today = days[days.length - 1]?.count ?? 0
   const avg30 = days.length > 0 ? (days.reduce((s, d) => s + d.count, 0) / days.length) : 0
   const avg30r = Math.round(avg30 * 10) / 10
+  const avg30Nonota = days.length > 0 ? (days.reduce((s, d) => s + d.countNonota, 0) / days.length) : 0
+  const avg30NonotaR = Math.round(avg30Nonota * 10) / 10
   const avg30Web = days.length > 0 ? (days.reduce((s, d) => s + d.countWebsite, 0) / days.length) : 0
   const avg30WebR = Math.round(avg30Web * 10) / 10
   const daysAboveMeta = days.filter(d => d.countWebsite >= META_DIA).length
@@ -1851,7 +1856,7 @@ export default function VistasHospedesPage() {
         <section id="reservas" style={{ marginBottom: 28, scrollMarginTop: 110 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
             <div>
-              <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.mutedFg, margin: "0 0 2px" }}>Nekt · Reservas Válidas (Stays)</p>
+              <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.mutedFg, margin: "0 0 2px" }}>Sapron · Reservas Válidas</p>
               <h2 style={{ fontSize: 18, fontWeight: 800, color: T.cardFg, margin: 0 }}>Meta de Reservas — Anitápolis</h2>
             </div>
             <button onClick={fetchReservas} disabled={loadingRes} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", background: T.card, border: `1px solid ${T.border}`, borderRadius: 7, fontSize: 12, color: T.mutedFg, cursor: "pointer", fontFamily: T.font }}>
@@ -1867,6 +1872,7 @@ export default function VistasHospedesPage() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10, marginBottom: 16 }}>
                 {[
                   { label: "Média 30d total", value: loadingRes ? "—" : fmt2(avg30r), color: "#f59e0b" },
+                  { label: "Média 30d não-OTA", value: loadingRes ? "—" : fmt2(avg30NonotaR), color: "#8b5cf6" },
                   { label: "Média 30d website", value: loadingRes ? "—" : fmt2(avg30WebR), color: statusColor(avg30WebR, META_DIA) },
                   { label: "Meta diária website", value: String(META_DIA), color: "#10b981" },
                   { label: "Dias acima da meta", value: loadingRes ? "—" : `${daysAboveMeta}/${days.length}`, color: statusColor(daysAboveMeta, days.length / 2) },
@@ -1885,6 +1891,7 @@ export default function VistasHospedesPage() {
                     <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 10, height: 10, background: "#10b98155", borderRadius: 2, display: "inline-block" }} /> Website (≥ meta)</span>
                     <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 10, height: 10, background: `${T.destructive}44`, borderRadius: 2, display: "inline-block" }} /> Website (&lt; meta)</span>
                     <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 14, height: 2, background: "#f59e0b", display: "inline-block" }} /> Média 30d total</span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 14, height: 2, background: "#8b5cf6", display: "inline-block" }} /> Média 30d não-OTA</span>
                     <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 14, height: 2, background: "#06b6d4", display: "inline-block" }} /> Média 30d website</span>
                     <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 14, height: 2, background: "#10b981", borderTop: "2px dashed #10b981", display: "inline-block" }} /> Meta (7/dia)</span>
                   </div>

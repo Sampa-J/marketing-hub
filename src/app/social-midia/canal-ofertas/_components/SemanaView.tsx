@@ -146,7 +146,7 @@ export function SemanaView() {
         background: T.cinza50, borderRadius: 8,
         fontSize: 12, color: T.mutedFg, lineHeight: 1.5,
       }}>
-        Os dados são salvos automaticamente no navegador por semana. Use o Radar de Ofertas no Lovable para selecionar os 2 imóveis desta semana.
+        Preencha os imóveis direto aqui — código, dados, copy e story. Os dados são salvos automaticamente no navegador por semana. Se preferir, a aba <strong>Selecionar Imóveis</strong> é um atalho opcional para trazer os códigos sugeridos já preenchidos.
       </div>
     </div>
   )

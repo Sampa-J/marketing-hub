@@ -58,7 +58,16 @@ export function ImovelCard({ index, storyKey, data, onChange }: Props) {
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
 
-  const isFormFilled = !!(data.nome && data.cidade && data.valor5diarias && data.maxHospedes && data.linkReservas)
+  // Campos essenciais para gerar a copy. O link de reservas NÃO é obrigatório —
+  // pode ser preenchido manualmente ou adicionado depois; a copy é gerada sem ele.
+  const CAMPOS_OBRIGATORIOS: { key: keyof ImovelData; label: string }[] = [
+    { key: 'nome', label: 'nome' },
+    { key: 'cidade', label: 'cidade' },
+    { key: 'valor5diarias', label: 'valor 5 diárias' },
+    { key: 'maxHospedes', label: 'nº de hóspedes' },
+  ]
+  const camposFaltando = CAMPOS_OBRIGATORIOS.filter(c => !String(data[c.key] ?? '').trim()).map(c => c.label)
+  const isFormFilled = camposFaltando.length === 0
   const hasCopy = !!(data.copyInstagram && data.copyWhatsapp)
 
   const set = (field: keyof ImovelData) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -331,6 +340,12 @@ const ambosEnviados = data.enviadoInstagram && data.enviadoWhatsapp
           </button>
         )}
       </div>
+
+      {!isFormFilled && !loading && (
+        <p style={{ fontSize: 11.5, color: T.mutedFg, margin: '8px 0 0' }}>
+          Preencha para liberar a geração: <strong>{camposFaltando.join(', ')}</strong>.
+        </p>
+      )}
 
       {error && <p style={{ fontSize: 12, color: T.destructive, margin: '8px 0 0' }}>{error}</p>}
 

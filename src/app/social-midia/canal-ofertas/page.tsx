@@ -11,13 +11,13 @@ import { RadarView } from './_components/RadarView'
 type Tab = 'selecionar' | 'semana' | 'historico'
 
 const TABS: { id: Tab; icon: typeof Megaphone; label: string }[] = [
-  { id: 'selecionar', icon: Search, label: 'Selecionar Imóveis' },
   { id: 'semana', icon: Megaphone, label: 'Esta Semana' },
+  { id: 'selecionar', icon: Search, label: 'Selecionar Imóveis' },
   { id: 'historico', icon: History, label: 'Histórico' },
 ]
 
 export default function Page() {
-  const [activeTab, setActiveTab] = useState<Tab>('selecionar')
+  const [activeTab, setActiveTab] = useState<Tab>('semana')
 
   return (
     <div style={{ minHeight: '100vh', background: T.muted, fontFamily: T.font }}>

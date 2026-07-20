@@ -10,3 +10,8 @@ SET links = ARRAY[link]
 WHERE link IS NOT NULL
   AND link <> ''
   AND (links IS NULL OR array_length(links, 1) IS NULL);
+
+-- Recarrega o schema cache do PostgREST na hora. Sem isso, a API do Supabase
+-- pode continuar retornando PGRST204 ("Could not find the 'links' column")
+-- por um tempo mesmo depois de a coluna já existir.
+NOTIFY pgrst, 'reload schema';

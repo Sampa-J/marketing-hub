@@ -12,10 +12,15 @@ export function CtaPicker({ value, onChange }: { value: string | null; onChange:
   const [copied, setCopied] = useState(false);
 
   const selected = useMemo(() => ctas.find((c) => c.id === value) ?? null, [ctas, value]);
+  const selectedLinks = useMemo(() => {
+    if (!selected) return [];
+    if (selected.links && selected.links.length) return selected.links.filter(Boolean);
+    return selected.link ? [selected.link] : [];
+  }, [selected]);
 
   async function copyTexto() {
     if (!selected) return;
-    const toCopy = selected.link || selected.descricao || selected.titulo;
+    const toCopy = selectedLinks[0] || selected.descricao || selected.titulo;
     if (!toCopy) return;
     try {
       await navigator.clipboard.writeText(toCopy);
@@ -53,10 +58,14 @@ export function CtaPicker({ value, onChange }: { value: string | null; onChange:
             </button>
           </div>
           {selected.descricao && <p style={{ margin: 0, fontSize: 12, color: T.cardFg, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{selected.descricao}</p>}
-          {selected.link && (
-            <a href={selected.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: T.primary, wordBreak: 'break-all' }}>
-              {selected.link}
-            </a>
+          {selectedLinks.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: selected.descricao ? 6 : 0 }}>
+              {selectedLinks.map((lnk, i) => (
+                <a key={i} href={lnk} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: T.primary, wordBreak: 'break-all' }}>
+                  {lnk}
+                </a>
+              ))}
+            </div>
           )}
         </div>
       )}

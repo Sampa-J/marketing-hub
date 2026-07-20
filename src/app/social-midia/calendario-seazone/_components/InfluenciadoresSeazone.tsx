@@ -166,7 +166,7 @@ function ColFilterPopup({ colKey, label, allRows, active, sortDir, onApply, onSo
 }
 
 /* ── GeralTab ── */
-function GeralTab() {
+function GeralTab({ reloadSignal }: { reloadSignal: number }) {
   const now = new Date()
   const anoAtual   = String(now.getFullYear())
   const mesNumero  = String(now.getMonth() + 1).padStart(2, "0") // "06"
@@ -178,24 +178,29 @@ function GeralTab() {
   const [filterAno, setFilterAno]           = useState(anoAtual)
   const [filterMes, setFilterMes]           = useState("todos")
   const [editOrcamento, setEditOrcamento]   = useState(false)
+  const initialLoad = useRef(true)
 
   useEffect(() => {
     const s = localStorage.getItem("influencers_orcamento_total") || ""
     setOrcamento(s); setOrcamentoInput(s)
   }, [])
 
+  // Recarrega sempre que a planilha (DataTab) muda — reloadSignal é incrementado
+  // a cada edição/inclusão/exclusão, pra o orçamento refletir na hora.
+  // O spinner só aparece no primeiro carregamento; as atualizações seguintes são silenciosas.
   useEffect(() => {
     async function loadAll() {
-      setLoading(true)
+      if (initialLoad.current) setLoading(true)
       const results: Record<string, InfluRow[]> = {}
       for (const t of DATA_TABS) {
         const { data } = await getSupabase().from(t.table).select("status_contrato,valor_trabalho,valor_hospedagem,ano,mes")
         results[t.id] = (data ?? []) as InfluRow[]
       }
-      setAllRows(results); setLoading(false)
+      setAllRows(results)
+      if (initialLoad.current) { setLoading(false); initialLoad.current = false }
     }
     loadAll()
-  }, [])
+  }, [reloadSignal])
 
   const todosMeses = Array.from(new Set(
     Object.values(allRows).flat()
@@ -322,7 +327,7 @@ function GeralTab() {
 }
 
 /* ── DataTab ── */
-function DataTab({ tables, addTable, cols }: { tables: string[]; addTable: string; cols: ColDef[] }) {
+function DataTab({ tables, addTable, cols, onDataChange }: { tables: string[]; addTable: string; cols: ColDef[]; onDataChange?: () => void }) {
   const tableRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const el = tableRef.current; if (!el) return
@@ -401,6 +406,7 @@ function DataTab({ tables, addTable, cols }: { tables: string[]; addTable: strin
     await getSupabase().from(row.__table).update({ [key]: finalVal || null }).eq("id", row.id)
     setRows(prev => prev.map(r => r.__key === rowKey ? { ...r, [key]: finalVal } : r))
     setEditCell(null); setSaving(false)
+    onDataChange?.()
   }
 
   async function addRow() {
@@ -411,6 +417,7 @@ function DataTab({ tables, addTable, cols }: { tables: string[]; addTable: strin
       Object.entries(data).forEach(([k, v]) => { newRow[k] = v === null ? "" : String(v) })
       newRow.__table = addTable; newRow.__key = `${addTable}:${newRow.id}`
       setRows(prev => [...prev, newRow]); setSelectedRow(newRow.__key)
+      onDataChange?.()
     }
   }
 
@@ -419,6 +426,7 @@ function DataTab({ tables, addTable, cols }: { tables: string[]; addTable: strin
     if (!confirm("Excluir este influencer?")) return
     await getSupabase().from(row.__table).delete().eq("id", row.id)
     setRows(prev => prev.filter(r => r.__key !== rowKey)); setSelectedRow(null)
+    onDataChange?.()
   }
 
   async function duplicateRow(row: InfluRow) {
@@ -430,6 +438,7 @@ function DataTab({ tables, addTable, cols }: { tables: string[]; addTable: strin
       Object.entries(data).forEach(([k, v]) => { newRow[k] = v === null ? "" : String(v) })
       newRow.__table = row.__table; newRow.__key = `${row.__table}:${newRow.id}`
       setRows(prev => [...prev, newRow]); setSelectedRow(newRow.__key)
+      onDataChange?.()
     }
   }
 
@@ -1119,6 +1128,9 @@ function InfluencersDashboard() {
 
 /* ── Influenciadores Seazone — reutilizável ── */
 export function InfluenciadoresSeazone() {
+  // Incrementado a cada alteração na planilha, pra o orçamento (GeralTab) recarregar
+  const [dataVersion, setDataVersion] = useState(0)
+
   return (
     <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 14, padding: "18px 22px", boxShadow: T.elevSm }}>
       {/* Dashboard de Influenciadores (topo) */}
@@ -1130,7 +1142,7 @@ export function InfluenciadoresSeazone() {
       </div>
 
       {/* Orçamento */}
-      <GeralTab />
+      <GeralTab reloadSignal={dataVersion} />
 
       {/* Planilha unificada */}
       <div style={{ marginTop: 24 }}>
@@ -1138,6 +1150,7 @@ export function InfluenciadoresSeazone() {
           tables={INFLU_TABLES}
           addTable={ADD_TABLE}
           cols={BASE_COLS}
+          onDataChange={() => setDataVersion(v => v + 1)}
         />
       </div>
     </div>

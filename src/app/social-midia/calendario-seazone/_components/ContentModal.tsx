@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { X, CheckCircle, Sparkles, Copy, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, CheckCircle, Sparkles, Copy, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { T } from '@/lib/constants';
 import { getEditorial, STATUSES } from '../_lib/calendar-constants';
 import { getStatusTag } from './ContentCard';
@@ -236,14 +236,31 @@ Escreva a copy ideal para esse post.`;
 
         <div style={{ background: T.cinza50, borderRadius: 8, padding: 12, marginBottom: 12 }}>
           <p style={{ fontSize: 11, fontWeight: 600, color: T.mutedFg, textTransform: 'uppercase', margin: '0 0 6px', letterSpacing: '0.05em' }}>Link do Drive (conteúdo)</p>
-          <input
-            value={driveLink}
-            onChange={(e) => setDriveLink(e.target.value)}
-            placeholder="https://drive.google.com/..."
-            onFocus={(e) => (e.currentTarget.style.borderColor = T.primary)}
-            onBlur={(e) => (e.currentTarget.style.borderColor = T.border)}
-            style={inputBase}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              value={driveLink}
+              onChange={(e) => setDriveLink(e.target.value)}
+              placeholder="https://drive.google.com/..."
+              onFocus={(e) => (e.currentTarget.style.borderColor = T.primary)}
+              onBlur={(e) => (e.currentTarget.style.borderColor = T.border)}
+              style={inputBase}
+            />
+            {driveLink.trim().startsWith('http') && (
+              <a
+                href={driveLink.trim()}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Abrir conteúdo no Drive"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
+                  color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe',
+                  borderRadius: 8, padding: '7px 12px', fontSize: 13, fontWeight: 600, textDecoration: 'none',
+                }}
+              >
+                <ExternalLink size={13} /> Abrir
+              </a>
+            )}
+          </div>
         </div>
 
         <div style={{ background: T.cinza50, borderRadius: 8, padding: 12, marginBottom: 12 }}>

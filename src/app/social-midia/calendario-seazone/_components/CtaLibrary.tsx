@@ -12,10 +12,16 @@ interface FormState {
   titulo: string;
   descricao: string;
   frentes: Frente[];
-  link: string;
+  links: string[];
 }
 
-const EMPTY: FormState = { id: null, titulo: '', descricao: '', frentes: [], link: '' };
+const EMPTY: FormState = { id: null, titulo: '', descricao: '', frentes: [], links: [''] };
+
+// Retorna todos os links de um CTA, cobrindo o campo legado `link`.
+function ctaLinks(c: Cta): string[] {
+  if (c.links && c.links.length) return c.links.filter(Boolean);
+  return c.link ? [c.link] : [];
+}
 
 export function CtaLibrary() {
   const { ctas, loading, createCta, updateCta, deleteCta } = useCtas();
@@ -42,7 +48,7 @@ export function CtaLibrary() {
   }, [ctas, filterFrentes, search]);
 
   async function copyTexto(c: Cta) {
-    const toCopy = c.link || c.descricao || c.titulo;
+    const toCopy = ctaLinks(c)[0] || c.descricao || c.titulo;
     if (!toCopy) return;
     try {
       await navigator.clipboard.writeText(toCopy);
@@ -51,10 +57,21 @@ export function CtaLibrary() {
     } catch {}
   }
 
-  function openNew() { setSaveError(null); setForm({ ...EMPTY }); }
+  function openNew() { setSaveError(null); setForm({ ...EMPTY, links: [''] }); }
   function openEdit(c: Cta) {
     setSaveError(null);
-    setForm({ id: c.id, titulo: c.titulo, descricao: c.descricao ?? '', frentes: c.frentes ?? [], link: c.link ?? '' });
+    const links = ctaLinks(c);
+    setForm({ id: c.id, titulo: c.titulo, descricao: c.descricao ?? '', frentes: c.frentes ?? [], links: links.length ? links : [''] });
+  }
+
+  function updateLink(i: number, value: string) {
+    setForm((f) => (f ? { ...f, links: f.links.map((l, idx) => (idx === i ? value : l)) } : f));
+  }
+  function addLink() {
+    setForm((f) => (f ? { ...f, links: [...f.links, ''] } : f));
+  }
+  function removeLink(i: number) {
+    setForm((f) => (f ? { ...f, links: f.links.filter((_, idx) => idx !== i) } : f));
   }
 
   async function handleSave() {
@@ -62,11 +79,13 @@ export function CtaLibrary() {
     setSaving(true);
     setSaveError(null);
     try {
+      const links = form.links.map((l) => l.trim()).filter(Boolean);
       const payload = {
         titulo: form.titulo.trim(),
         descricao: form.descricao.trim() || null,
         frentes: form.frentes.length ? form.frentes : null,
-        link: form.link.trim() || null,
+        links: links.length ? links : null,
+        link: links[0] ?? null, // mantém o campo legado em sincronia
       };
       if (form.id) await updateCta(form.id, payload);
       else await createCta(payload);
@@ -79,7 +98,9 @@ export function CtaLibrary() {
       setSaveError(
         /row-level security/i.test(msg) || code === '42501'
           ? 'Sem permissão pra gravar na tabela de CTAs (RLS do Supabase). Rode a policy de escrita: SQL Editor do Supabase → sql/2026-07-15_ctas_rls_fix.sql.'
-          : `Não foi possível salvar: ${msg}${code ? ` (código ${code})` : ''}`,
+          : /column .*links.* does not exist/i.test(msg) || code === '42703'
+            ? 'O banco ainda não tem a coluna de múltiplos links. Rode a migração: SQL Editor do Supabase → sql/2026-07-20_ctas_multi_links.sql.'
+            : `Não foi possível salvar: ${msg}${code ? ` (código ${code})` : ''}`,
       );
     } finally {
       setSaving(false);
@@ -149,11 +170,11 @@ export function CtaLibrary() {
               </div>
               <FrenteTags frentes={c.frentes} />
               {c.descricao && <p style={{ margin: 0, fontSize: 12, color: T.cardFg, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{c.descricao}</p>}
-              {c.link && (
-                <a href={c.link} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: T.primary, wordBreak: 'break-all' }}>
-                  <ExternalLink size={11} /> {c.link}
+              {ctaLinks(c).map((lnk, i) => (
+                <a key={i} href={lnk} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: T.primary, wordBreak: 'break-all' }}>
+                  <ExternalLink size={11} /> {lnk}
                 </a>
-              )}
+              ))}
             </div>
           ))}
         </div>
@@ -183,8 +204,36 @@ export function CtaLibrary() {
               <FrentePicker value={form.frentes} onChange={(f) => setForm({ ...form, frentes: f })} />
             </div>
             <div style={{ marginBottom: 20 }}>
-              <label style={labelStyle}>Link (opcional)</label>
-              <input value={form.link} onChange={(e) => setForm({ ...form, link: e.target.value })} placeholder="https://..." style={inputBase} />
+              <label style={labelStyle}>Links (opcional)</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {form.links.map((lnk, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      value={lnk}
+                      onChange={(e) => updateLink(i, e.target.value)}
+                      placeholder="https://..."
+                      style={inputBase}
+                    />
+                    {form.links.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeLink(i)}
+                        title="Remover link"
+                        style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 9px', cursor: 'pointer', color: T.destructive, display: 'flex', flexShrink: 0 }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={addLink}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 8, background: 'none', border: `1px dashed ${T.border}`, borderRadius: 8, padding: '6px 12px', fontSize: 13, fontWeight: 600, color: T.primary, cursor: 'pointer' }}
+              >
+                <Plus size={14} /> Adicionar link
+              </button>
             </div>
 
             {saveError && (

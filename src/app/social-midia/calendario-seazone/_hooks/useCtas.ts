@@ -28,8 +28,13 @@ export function useCtas() {
 
   // Se a coluna `links` (múltiplos links) ainda não existe no banco, cai de volta
   // pro campo legado `link` — assim salvar CTA continua funcionando antes da migração.
-  const isMissingLinksColumn = (error: { code?: string; message?: string } | null) =>
-    !!error && (error.code === '42703' || /column .*links.* does not exist/i.test(error.message ?? ''));
+  const isMissingLinksColumn = (error: { code?: string; message?: string } | null) => {
+    if (!error) return false;
+    // 42703 = coluna inexistente (Postgres); PGRST204 = coluna fora do schema cache (PostgREST/Supabase)
+    if (error.code === '42703' || error.code === 'PGRST204') return true;
+    const msg = error.message ?? '';
+    return /column .*links.* does not exist/i.test(msg) || /could not find the .*links.* column/i.test(msg);
+  };
   const stripLinks = (obj: Record<string, unknown>) => {
     const rest: Record<string, unknown> = { ...obj };
     delete rest.links;

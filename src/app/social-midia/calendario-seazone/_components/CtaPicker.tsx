@@ -13,9 +13,8 @@ export function CtaPicker({ value, onChange }: { value: string | null; onChange:
 
   const selected = useMemo(() => ctas.find((c) => c.id === value) ?? null, [ctas, value]);
   const selectedLinks = useMemo(() => {
-    if (!selected) return [];
-    if (selected.links && selected.links.length) return selected.links.filter(Boolean);
-    return selected.link ? [selected.link] : [];
+    if (!selected?.link) return [];
+    return selected.link.split('\n').map((s) => s.trim()).filter(Boolean);
   }, [selected]);
 
   async function copyTexto() {

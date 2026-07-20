@@ -98,7 +98,7 @@ export function CtaLibrary() {
       setSaveError(
         /row-level security/i.test(msg) || code === '42501'
           ? 'Sem permissão pra gravar na tabela de CTAs (RLS do Supabase). Rode a policy de escrita: SQL Editor do Supabase → sql/2026-07-15_ctas_rls_fix.sql.'
-          : /column .*links.* does not exist/i.test(msg) || code === '42703'
+          : /column .*links.* does not exist/i.test(msg) || /could not find the .*links.* column/i.test(msg) || code === '42703' || code === 'PGRST204'
             ? 'O banco ainda não tem a coluna de múltiplos links. Rode a migração: SQL Editor do Supabase → sql/2026-07-20_ctas_multi_links.sql.'
             : `Não foi possível salvar: ${msg}${code ? ` (código ${code})` : ''}`,
       );

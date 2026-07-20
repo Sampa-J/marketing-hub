@@ -17,10 +17,11 @@ interface FormState {
 
 const EMPTY: FormState = { id: null, titulo: '', descricao: '', frentes: [], links: [''] };
 
-// Retorna todos os links de um CTA, cobrindo o campo legado `link`.
+// Retorna todos os links de um CTA. Os múltiplos links são guardados no próprio
+// campo `link` (text), separados por quebra de linha — sem depender de migração.
 function ctaLinks(c: Cta): string[] {
-  if (c.links && c.links.length) return c.links.filter(Boolean);
-  return c.link ? [c.link] : [];
+  if (!c.link) return [];
+  return c.link.split('\n').map((s) => s.trim()).filter(Boolean);
 }
 
 export function CtaLibrary() {
@@ -84,8 +85,8 @@ export function CtaLibrary() {
         titulo: form.titulo.trim(),
         descricao: form.descricao.trim() || null,
         frentes: form.frentes.length ? form.frentes : null,
-        links: links.length ? links : null,
-        link: links[0] ?? null, // mantém o campo legado em sincronia
+        // Todos os links vão no campo `link` (text), separados por quebra de linha.
+        link: links.length ? links.join('\n') : null,
       };
       if (form.id) await updateCta(form.id, payload);
       else await createCta(payload);
@@ -98,9 +99,7 @@ export function CtaLibrary() {
       setSaveError(
         /row-level security/i.test(msg) || code === '42501'
           ? 'Sem permissão pra gravar na tabela de CTAs (RLS do Supabase). Rode a policy de escrita: SQL Editor do Supabase → sql/2026-07-15_ctas_rls_fix.sql.'
-          : /column .*links.* does not exist/i.test(msg) || /could not find the .*links.* column/i.test(msg) || code === '42703' || code === 'PGRST204'
-            ? 'O banco ainda não tem a coluna de múltiplos links. Rode a migração: SQL Editor do Supabase → sql/2026-07-20_ctas_multi_links.sql.'
-            : `Não foi possível salvar: ${msg}${code ? ` (código ${code})` : ''}`,
+          : `Não foi possível salvar: ${msg}${code ? ` (código ${code})` : ''}`,
       );
     } finally {
       setSaving(false);

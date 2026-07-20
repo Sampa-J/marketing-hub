@@ -26,26 +26,31 @@ export function useCtas() {
     fetchCtas();
   }, [fetchCtas]);
 
-  const createCta = async (cta: Omit<Cta, 'id' | 'created_at' | 'updated_at'>) => {
-    const { data, error } = await getSupabase()
-      .from('ctas')
-      .insert(cta)
-      .select()
-      .single();
+  // Se a coluna `links` (múltiplos links) ainda não existe no banco, cai de volta
+  // pro campo legado `link` — assim salvar CTA continua funcionando antes da migração.
+  const isMissingLinksColumn = (error: { code?: string; message?: string } | null) =>
+    !!error && (error.code === '42703' || /column .*links.* does not exist/i.test(error.message ?? ''));
+  const stripLinks = (obj: Record<string, unknown>) => {
+    const rest: Record<string, unknown> = { ...obj };
+    delete rest.links;
+    return rest;
+  };
 
+  const createCta = async (cta: Omit<Cta, 'id' | 'created_at' | 'updated_at'>) => {
+    let { data, error } = await getSupabase().from('ctas').insert(cta).select().single();
+    if (isMissingLinksColumn(error)) {
+      ({ data, error } = await getSupabase().from('ctas').insert(stripLinks(cta)).select().single());
+    }
     if (error) throw error;
     setCtas((prev) => [data as Cta, ...prev]);
     return data as Cta;
   };
 
   const updateCta = async (id: string, updates: Partial<Cta>) => {
-    const { data, error } = await getSupabase()
-      .from('ctas')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-
+    let { data, error } = await getSupabase().from('ctas').update(updates).eq('id', id).select().single();
+    if (isMissingLinksColumn(error)) {
+      ({ data, error } = await getSupabase().from('ctas').update(stripLinks(updates)).eq('id', id).select().single());
+    }
     if (error) throw error;
     setCtas((prev) => prev.map((c) => (c.id === id ? (data as Cta) : c)));
     return data as Cta;

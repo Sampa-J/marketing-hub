@@ -157,9 +157,18 @@ export function CalendarView() {
     });
   }, [items, filterEditorials, filterChannels, filterFormats, filterFrentes, filterPublicos, filterCollabs, filterCtas, search]);
 
-  // Distribuição de frentes no mês visível (conta cada marcação de frente)
+  const monthKey = format(currentMonth, 'yyyy-MM');
+
+  // Filtros ativos (fora o mês em si) — usado pra mostrar a contagem filtrada
+  const hasActiveFilters =
+    filterEditorials.length > 0 || filterChannels.length > 0 || filterFormats.length > 0 ||
+    filterFrentes.length > 0 || filterPublicos.length > 0 || filterCollabs.length > 0 ||
+    filterCtas.length > 0 || search.trim().length > 0;
+
+  // Distribuição de frentes no mês visível (conta cada marcação de frente).
+  // Restrito aos dias do próprio mês (YYYY-MM) — dias do mês anterior que aparecem
+  // na grade (padding) NÃO entram na conta.
   const frenteDist = useMemo(() => {
-    const monthKey = format(currentMonth, 'yyyy-MM');
     const counts: Record<string, number> = {};
     let total = 0;
     items.forEach((it) => {
@@ -174,7 +183,17 @@ export function CalendarView() {
         pct: total ? ((counts[f.value] || 0) / total) * 100 : 0,
       })).filter((r) => r.count > 0).sort((a, b) => b.count - a.count),
     };
-  }, [items, currentMonth]);
+  }, [items, monthKey]);
+
+  // Contagem de posts do mês visível: total e quantos batem com os filtros ativos.
+  // Também restrito aos dias 1–31 do próprio mês (usa o prefixo YYYY-MM da data).
+  const monthPostCount = useMemo(() => {
+    const inMonth = (it: Post) => !!it.scheduled_at && it.scheduled_at.substring(0, 7) === monthKey;
+    return {
+      total: items.filter(inMonth).length,
+      filtered: filteredItems.filter(inMonth).length,
+    };
+  }, [items, filteredItems, monthKey]);
 
   const toggleFormatFilter = (fmt: ContentFormat) => {
     setFilterFormats((prev) => prev.includes(fmt) ? prev.filter((f) => f !== fmt) : [...prev, fmt]);
@@ -558,6 +577,36 @@ export function CalendarView() {
           <span style={{ fontSize: 13, fontWeight: 800, color: T.cardFg }}>Collab:</span>
           <CollabPicker value={filterCollabs} onChange={setFilterCollabs} />
         </div>
+        </div>
+
+        {/* Contagem de posts do mês — reflete os filtros ativos */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.border}`, flexWrap: 'wrap' }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            background: hasActiveFilters ? T.pendingBg : T.cinza50,
+            border: `1px solid ${hasActiveFilters ? T.primary : T.border}`,
+            borderRadius: 999, padding: '5px 12px', fontSize: 13, fontWeight: 700,
+            color: hasActiveFilters ? T.primary : T.cardFg,
+          }}>
+            {hasActiveFilters
+              ? `${monthPostCount.filtered} de ${monthPostCount.total} ${monthPostCount.total === 1 ? 'post' : 'posts'}`
+              : `${monthPostCount.total} ${monthPostCount.total === 1 ? 'post' : 'posts'}`}
+            <span style={{ fontWeight: 500, color: T.mutedFg, textTransform: 'capitalize' }}>
+              · {format(currentMonth, 'MMMM', { locale: ptBR })}
+            </span>
+          </span>
+          {hasActiveFilters && (
+            <button
+              onClick={() => {
+                setFilterEditorials([]); setFilterChannels([]); setFilterFormats([]);
+                setFilterFrentes([]); setFilterPublicos([]); setFilterCollabs([]);
+                setFilterCtas([]); setSearch('');
+              }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: `1px solid ${T.border}`, borderRadius: 999, padding: '5px 12px', fontSize: 12, fontWeight: 600, color: T.destructive, cursor: 'pointer' }}
+            >
+              <X size={13} /> Limpar filtros
+            </button>
+          )}
         </div>
       </div>
 

@@ -58,7 +58,8 @@ export interface Cta {
   texto?: string | null; // campo legado, aposentado do formulário
   descricao: string | null;
   frentes: Frente[] | null;
-  link: string | null;
+  link: string | null; // legado — mantido em sincronia com links[0]
+  links?: string[] | null;
   created_at: string;
   updated_at: string;
 }
